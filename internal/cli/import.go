@@ -8,8 +8,8 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/larcanjo/awsvpn/internal/config"
-	"github.com/larcanjo/awsvpn/internal/profile"
+	"github.com/lucassarcanjo/aws-vpn-cli/internal/config"
+	"github.com/lucassarcanjo/aws-vpn-cli/internal/profile"
 	"github.com/spf13/cobra"
 )
 

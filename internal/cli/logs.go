@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/larcanjo/awsvpn/internal/config"
+	"github.com/lucassarcanjo/aws-vpn-cli/internal/config"
 	"github.com/spf13/cobra"
 )
 

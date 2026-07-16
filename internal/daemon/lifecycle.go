@@ -3,10 +3,10 @@ package daemon
 import (
 	"fmt"
 
-	"github.com/larcanjo/awsvpn/internal/logging"
-	"github.com/larcanjo/awsvpn/internal/mgmt"
-	"github.com/larcanjo/awsvpn/internal/state"
-	"github.com/larcanjo/awsvpn/internal/system"
+	"github.com/lucassarcanjo/aws-vpn-cli/internal/logging"
+	"github.com/lucassarcanjo/aws-vpn-cli/internal/mgmt"
+	"github.com/lucassarcanjo/aws-vpn-cli/internal/state"
+	"github.com/lucassarcanjo/aws-vpn-cli/internal/system"
 )
 
 // Disconnect tears down the active tunnel: signals acvc-openvpn to exit, reverts

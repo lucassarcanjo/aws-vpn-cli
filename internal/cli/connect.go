@@ -9,10 +9,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/larcanjo/awsvpn/internal/daemon"
-	"github.com/larcanjo/awsvpn/internal/logging"
-	"github.com/larcanjo/awsvpn/internal/profile"
-	"github.com/larcanjo/awsvpn/internal/system"
+	"github.com/lucassarcanjo/aws-vpn-cli/internal/daemon"
+	"github.com/lucassarcanjo/aws-vpn-cli/internal/logging"
+	"github.com/lucassarcanjo/aws-vpn-cli/internal/profile"
+	"github.com/lucassarcanjo/aws-vpn-cli/internal/system"
 	"github.com/spf13/cobra"
 )
 

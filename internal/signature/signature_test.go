@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/larcanjo/awsvpn/internal/config"
+	"github.com/lucassarcanjo/aws-vpn-cli/internal/config"
 )
 
 // TestVerifyRealBinary proves the exact codesign invocation works from Go against

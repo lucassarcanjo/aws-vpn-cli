@@ -4,7 +4,7 @@
 // the tunnel over the management socket — never to disk or a process argument.
 package main
 
-import "github.com/larcanjo/awsvpn/internal/cli"
+import "github.com/lucassarcanjo/aws-vpn-cli/internal/cli"
 
 func main() {
 	cli.Execute()

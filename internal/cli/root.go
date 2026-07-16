@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/larcanjo/awsvpn/internal/privilege"
+	"github.com/lucassarcanjo/aws-vpn-cli/internal/privilege"
 	"github.com/spf13/cobra"
 )
 

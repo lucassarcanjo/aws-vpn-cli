@@ -12,9 +12,9 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/larcanjo/awsvpn/internal/dns"
-	"github.com/larcanjo/awsvpn/internal/privilege"
-	"github.com/larcanjo/awsvpn/internal/signature"
+	"github.com/lucassarcanjo/aws-vpn-cli/internal/dns"
+	"github.com/lucassarcanjo/aws-vpn-cli/internal/privilege"
+	"github.com/lucassarcanjo/aws-vpn-cli/internal/signature"
 )
 
 // Port abstracts the privileged side effects. Production uses Real; tests can

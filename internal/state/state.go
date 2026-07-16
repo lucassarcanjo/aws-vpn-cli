@@ -13,9 +13,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/larcanjo/awsvpn/internal/config"
-	"github.com/larcanjo/awsvpn/internal/dns"
-	"github.com/larcanjo/awsvpn/internal/ovpn"
+	"github.com/lucassarcanjo/aws-vpn-cli/internal/config"
+	"github.com/lucassarcanjo/aws-vpn-cli/internal/dns"
+	"github.com/lucassarcanjo/aws-vpn-cli/internal/ovpn"
 )
 
 // Run records everything needed to observe and tear down the active tunnel. It is

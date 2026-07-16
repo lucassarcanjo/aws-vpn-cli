@@ -3,7 +3,7 @@ package cli
 import (
 	"fmt"
 
-	"github.com/larcanjo/awsvpn/internal/version"
+	"github.com/lucassarcanjo/aws-vpn-cli/internal/version"
 	"github.com/spf13/cobra"
 )
 

@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/larcanjo/awsvpn/internal/config"
+	"github.com/lucassarcanjo/aws-vpn-cli/internal/config"
 )
 
 // buildFixtureHome lays out a fake user home with an AWS profile store and an

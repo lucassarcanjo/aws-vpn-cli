@@ -1,5 +1,5 @@
 BINARY := awsvpn
-PKG    := github.com/larcanjo/awsvpn
+PKG    := github.com/lucassarcanjo/aws-vpn-cli
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT  := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 DATE    := $(shell date +%Y-%m-%d)

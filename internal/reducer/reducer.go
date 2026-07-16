@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"net/url"
 
-	"github.com/larcanjo/awsvpn/internal/ovpn"
+	"github.com/lucassarcanjo/aws-vpn-cli/internal/ovpn"
 )
 
 // Phase is where we are in the handshake.

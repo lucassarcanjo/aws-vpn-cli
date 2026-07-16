@@ -85,13 +85,13 @@ Source-first — you build it, so you never run someone else's prebuilt binary a
 root:
 
 ```sh
-go install github.com/larcanjo/awsvpn@latest
+go install github.com/lucassarcanjo/aws-vpn-cli@latest
 ```
 
 or from a clone:
 
 ```sh
-git clone https://github.com/larcanjo/awsvpn && cd awsvpn
+git clone https://github.com/lucassarcanjo/aws-vpn-cli && cd aws-vpn-cli
 make install          # builds with version metadata, installs to $GOBIN
 ```
 

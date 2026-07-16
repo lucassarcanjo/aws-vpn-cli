@@ -1,4 +1,4 @@
-module github.com/larcanjo/awsvpn
+module github.com/lucassarcanjo/aws-vpn-cli
 
 go 1.24.7
 

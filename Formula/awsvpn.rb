@@ -1,21 +1,21 @@
 # Homebrew formula that BUILDS FROM SOURCE — no prebuilt binary is ever run as
-# root on trust. Drop this into a tap (e.g. larcanjo/homebrew-tap) and
-# `brew install larcanjo/tap/awsvpn`.
+# root on trust. Drop this into a tap (e.g. lucassarcanjo/homebrew-tap) and
+# `brew install lucassarcanjo/tap/awsvpn`.
 class Awsvpn < Formula
   desc "CLI-first AWS Client VPN for macOS (SAML/SSO), trust-minimal wrapper"
-  homepage "https://github.com/larcanjo/awsvpn"
-  url "https://github.com/larcanjo/awsvpn/archive/refs/tags/v0.1.0.tar.gz"
+  homepage "https://github.com/lucassarcanjo/aws-vpn-cli"
+  url "https://github.com/lucassarcanjo/aws-vpn-cli/archive/refs/tags/v0.1.0.tar.gz"
   # sha256 "<filled in at release>"
   license "MIT"
-  head "https://github.com/larcanjo/awsvpn.git", branch: "main"
+  head "https://github.com/lucassarcanjo/aws-vpn-cli.git", branch: "main"
 
   depends_on "go" => :build
   depends_on :macos
 
   def install
     ldflags = %W[
-      -X github.com/larcanjo/awsvpn/internal/version.Version=#{version}
-      -X github.com/larcanjo/awsvpn/internal/version.Date=#{time.strftime("%Y-%m-%d")}
+      -X github.com/lucassarcanjo/aws-vpn-cli/internal/version.Version=#{version}
+      -X github.com/lucassarcanjo/aws-vpn-cli/internal/version.Date=#{time.strftime("%Y-%m-%d")}
     ]
     system "go", "build", *std_go_args(ldflags: ldflags), "."
   end

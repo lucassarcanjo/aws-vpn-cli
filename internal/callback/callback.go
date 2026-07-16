@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/larcanjo/awsvpn/web"
+	"github.com/lucassarcanjo/aws-vpn-cli/web"
 )
 
 // Result carries the captured assertion or the reason capture failed.

@@ -11,15 +11,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/larcanjo/awsvpn/internal/callback"
-	"github.com/larcanjo/awsvpn/internal/config"
-	"github.com/larcanjo/awsvpn/internal/dns"
-	"github.com/larcanjo/awsvpn/internal/logging"
-	"github.com/larcanjo/awsvpn/internal/mgmt"
-	"github.com/larcanjo/awsvpn/internal/profile"
-	"github.com/larcanjo/awsvpn/internal/reducer"
-	"github.com/larcanjo/awsvpn/internal/state"
-	"github.com/larcanjo/awsvpn/internal/system"
+	"github.com/lucassarcanjo/aws-vpn-cli/internal/callback"
+	"github.com/lucassarcanjo/aws-vpn-cli/internal/config"
+	"github.com/lucassarcanjo/aws-vpn-cli/internal/dns"
+	"github.com/lucassarcanjo/aws-vpn-cli/internal/logging"
+	"github.com/lucassarcanjo/aws-vpn-cli/internal/mgmt"
+	"github.com/lucassarcanjo/aws-vpn-cli/internal/profile"
+	"github.com/lucassarcanjo/aws-vpn-cli/internal/reducer"
+	"github.com/lucassarcanjo/aws-vpn-cli/internal/state"
+	"github.com/lucassarcanjo/aws-vpn-cli/internal/system"
 )
 
 const (
