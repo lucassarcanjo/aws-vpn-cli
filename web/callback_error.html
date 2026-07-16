@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex, nofollow">
+<title>Authentication failed · awsvpn</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --ink: #1a1d21;
+    --muted: #5b636d;
+    --faint: #8b939d;
+    --line: #e6e8ec;
+    --accent: #c0392b;
+    --accent-soft: #fbe9e7;
+    --ring: rgba(192, 57, 43, .16);
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d0f12;
+      --card: #16191e;
+      --ink: #eef1f4;
+      --muted: #a2abb5;
+      --faint: #6b747e;
+      --line: #262b32;
+      --accent: #ff6b5e;
+      --accent-soft: #241514;
+      --ring: rgba(255, 107, 94, .16);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+
+  .card {
+    width: 100%;
+    max-width: 420px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 40px 36px 28px;
+    text-align: center;
+    box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 12px 32px rgba(0,0,0,.06);
+    animation: rise .4s cubic-bezier(.2,.8,.2,1) both;
+  }
+  @media (prefers-color-scheme: dark) {
+    .card { box-shadow: 0 1px 2px rgba(0,0,0,.4), 0 16px 40px rgba(0,0,0,.5); }
+  }
+
+  .badge {
+    width: 64px; height: 64px;
+    margin: 0 auto 22px;
+    border-radius: 50%;
+    background: var(--accent-soft);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 0 0 8px var(--ring);
+  }
+  .badge svg { width: 30px; height: 30px; }
+  .badge path {
+    stroke: var(--accent);
+    stroke-width: 3;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    fill: none;
+    stroke-dasharray: 16;
+    stroke-dashoffset: 16;
+    animation: draw .45s .2s cubic-bezier(.2,.8,.2,1) forwards;
+  }
+
+  h1 {
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -.01em;
+    margin: 0 0 8px;
+  }
+  p {
+    font-size: 15px;
+    line-height: 1.55;
+    color: var(--muted);
+    margin: 0 auto;
+    max-width: 36ch;
+  }
+  kbd {
+    font-family: var(--mono);
+    font-size: 13px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 1px 6px;
+    color: var(--ink);
+  }
+
+  footer {
+    margin-top: 24px;
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--faint);
+    letter-spacing: .01em;
+  }
+  footer b { color: var(--muted); font-weight: 600; }
+
+  @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  @keyframes draw { to { stroke-dashoffset: 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    .card, .badge path { animation: none; }
+    .badge path { stroke-dashoffset: 0; }
+  }
+</style>
+</head>
+<body>
+  <main class="card" role="alert">
+    <div class="badge" aria-hidden="true">
+      <svg viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17"/></svg>
+    </div>
+    <h1>Authentication failed</h1>
+    <p>The sign-in response was missing or malformed. Close this tab and run <kbd>awsvpn connect</kbd> again.</p>
+    <footer>
+      <b>awsvpn</b> &middot; served locally on 127.0.0.1 &middot; no external requests
+    </footer>
+  </main>
+</body>
+</html>

@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex, nofollow">
+<title>Authenticated · awsvpn</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --ink: #1a1d21;
+    --muted: #5b636d;
+    --faint: #8b939d;
+    --line: #e6e8ec;
+    --accent: #128a4d;
+    --accent-soft: #e5f4ec;
+    --ring: rgba(18, 138, 77, .18);
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d0f12;
+      --card: #16191e;
+      --ink: #eef1f4;
+      --muted: #a2abb5;
+      --faint: #6b747e;
+      --line: #262b32;
+      --accent: #3ddc84;
+      --accent-soft: #14231a;
+      --ring: rgba(61, 220, 132, .16);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+
+  .card {
+    width: 100%;
+    max-width: 420px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 40px 36px 28px;
+    text-align: center;
+    box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 12px 32px rgba(0,0,0,.06);
+    animation: rise .4s cubic-bezier(.2,.8,.2,1) both;
+  }
+  @media (prefers-color-scheme: dark) {
+    .card { box-shadow: 0 1px 2px rgba(0,0,0,.4), 0 16px 40px rgba(0,0,0,.5); }
+  }
+
+  .badge {
+    width: 64px; height: 64px;
+    margin: 0 auto 22px;
+    border-radius: 50%;
+    background: var(--accent-soft);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 0 0 8px var(--ring);
+  }
+  .badge svg { width: 30px; height: 30px; }
+  .badge .check {
+    stroke: var(--accent);
+    stroke-width: 3;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    fill: none;
+    stroke-dasharray: 30;
+    stroke-dashoffset: 30;
+    animation: draw .5s .2s cubic-bezier(.2,.8,.2,1) forwards;
+  }
+
+  h1 {
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -.01em;
+    margin: 0 0 8px;
+  }
+  p {
+    font-size: 15px;
+    line-height: 1.55;
+    color: var(--muted);
+    margin: 0 auto;
+    max-width: 34ch;
+  }
+  kbd {
+    font-family: var(--mono);
+    font-size: 13px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 1px 6px;
+    color: var(--ink);
+  }
+
+  .status {
+    margin-top: 24px;
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--faint);
+  }
+  .pulse {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 0 var(--ring);
+    animation: pulse 1.8s ease-out infinite;
+  }
+
+  footer {
+    margin-top: 22px;
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--faint);
+    letter-spacing: .01em;
+  }
+  footer b { color: var(--muted); font-weight: 600; }
+
+  @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  @keyframes draw { to { stroke-dashoffset: 0; } }
+  @keyframes pulse {
+    0%   { box-shadow: 0 0 0 0 var(--ring); }
+    70%  { box-shadow: 0 0 0 7px transparent; }
+    100% { box-shadow: 0 0 0 0 transparent; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .card, .badge .check, .pulse { animation: none; }
+    .badge .check { stroke-dashoffset: 0; }
+  }
+</style>
+</head>
+<body>
+  <main class="card" role="status" aria-live="polite">
+    <div class="badge" aria-hidden="true">
+      <svg viewBox="0 0 24 24"><path class="check" d="M4 12.5l5 5L20 6.5"/></svg>
+    </div>
+    <h1>Authenticated</h1>
+    <p>Single sign-on is complete. You can close this tab and return to your terminal.</p>
+    <div class="status">
+      <span class="pulse" aria-hidden="true"></span>
+      <span>awsvpn is bringing up the tunnel&hellip;</span>
+    </div>
+    <footer>
+      <b>awsvpn</b> &middot; served locally on 127.0.0.1 &middot; no external requests
+    </footer>
+  </main>
+  <script>
+    // Best-effort: most browsers only allow close() on script-opened tabs,
+    // so this silently no-ops for the SSO redirect tab. No network calls.
+    setTimeout(function () { try { window.close(); } catch (e) {} }, 2500);
+  </script>
+</body>
+</html>
