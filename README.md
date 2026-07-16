@@ -1,214 +1,94 @@
-# awsvpn — CLI-first AWS Client VPN for macOS
+# awsvpn
 
-Connect to a SAML/SSO AWS Client VPN endpoint from your terminal:
+Connect to a SAML/SSO AWS Client VPN endpoint from your macOS terminal.
 
 ```sh
 sudo awsvpn connect dev
 ```
 
-No GUI app, no menu-bar icon, no clicking through a browser tab you launched by
-hand. One command brings up the tunnel and returns control to your shell (or your
-script, or your agent); `status` and `disconnect` control it out of band.
+`awsvpn` starts the AWS-signed VPN engine installed by the official AWS VPN
+Client, then returns control to your shell. Use it from a terminal, script, or
+agent without a menu bar app or a manually opened browser tab.
 
-`awsvpn` is deliberately small and **source-first**: you are meant to build it
-yourself and read it before trusting it with root.
+## Why awsvpn
 
----
+VPN clients run as root, change DNS and routes, and handle a bearer credential.
+`awsvpn` keeps the privileged part small and inspectable:
 
-## Why this exists (the trust story)
+- It runs the AWS-signed `acvc-openvpn` binary from the official AWS VPN Client.
+  Before root executes it, `awsvpn` verifies its Apple signature and pins AWS's
+  team identifier, `94KV3E626L`.
+- It keeps the SAML assertion in memory. The assertion never appears in a file
+  or process argument; `awsvpn` passes it to OpenVPN over its management socket.
+- It vendors its small dependency set and builds from source. Each connection
+  uses `sudo`; `install-privilege` is an explicit opt-in for automation.
 
-A VPN client is close to the worst thing to run untrusted. It runs **as root**,
-it **rewrites your routing table and DNS** (so a malicious one can silently
-intercept all your traffic), and it **handles a bearer credential** (the SAML
-assertion — whoever holds it can authenticate as you until it expires). The
-open-source AWS VPN CLIs on the web ask you to run exactly that much power on
-trust.
-
-`awsvpn` narrows what you have to trust:
-
-- **It does not ship or patch its own VPN engine.** The privileged tunnelling is
-  done by the **AWS-signed `acvc-openvpn`** binary already installed with the
-  official AWS VPN Client (OpenVPN 2.6.12). Before executing it as root, `awsvpn`
-  **verifies its Apple code signature and pins AWS's team identifier**
-  (`94KV3E626L`). A swapped binary can't run as root under your name.
-- **The SAML assertion never touches disk or a process argument.** It is captured
-  in memory on a one-shot loopback callback and handed to the tunnel over the
-  OpenVPN **management socket**, then dropped. (Both reference projects write it
-  to `saml-response.txt`; we don't.)
-- **The code is small and stdlib-first.** The only third-party dependencies are
-  `cobra` (command surface) and its two small transitive deps — all **vendored**
-  in-repo, so `go build` is hermetic and the whole tree is right there to read.
-- **No standing privilege by default.** You run `sudo awsvpn …` per connection.
-  There is an explicit, opt-in `install-privilege` command for non-interactive
-  use that installs a *narrowly-scoped* passwordless-sudo rule — and prints
-  exactly what it will write first.
-
-The threat this defends against is *running third-party VPN code as root*.
-Authoring a tiny layer you can read end-to-end retires that threat.
-
-## How it works
-
-```
-        you ──sudo──▶ awsvpn (root)
-                        │
-      verify signature  │  ── codesign --verify --strict -R=<team-pinned> acvc-openvpn
-                        ▼
-        spawn ────▶ acvc-openvpn  ──management unix socket──▶  awsvpn drives the
-        (detached, its own tun)                                SAML→CRV1 handshake
-                        │
-   ┌────────────────────┴─────────────────────────────────────────────┐
-   │  1. first auth:  user "N/A", pass "ACS::35001"  (declares callback)│
-   │  2. endpoint returns a CRV1 challenge carrying the SAML URL        │
-   │  3. open the URL in *your* browser; capture the assertion on       │
-   │     127.0.0.1:35001 (in memory, one-shot, times out)              │
-   │  4. answer with  "CRV1::<state>::<url-encoded-assertion>"          │
-   │  5. CONNECTED → apply pushed DNS via scutil, record run state      │
-   └───────────────────────────────────────────────────────────────────┘
-```
-
-The credential- and handshake-bearing logic is a **pure state machine**
-(`internal/reducer`) with no I/O, driven by the real management transcript in
-tests. Everything impure — signature verify, socket I/O, browser, `scutil`,
-daemonize — lives behind a thin system port.
+Read the [security model](docs/security.md) before using it on a system you care
+about.
 
 ## Requirements
 
-- **macOS** (only). No Linux/Windows.
-- The **official AWS VPN Client** installed (for the signed `acvc-openvpn`
-  binary): <https://aws.amazon.com/vpn/client-vpn-download/>. Its GUI is the pain
-  you're escaping; the install is a one-time prerequisite.
-- **Go 1.24+** to build from source.
+- macOS.
+- The [official AWS VPN Client](https://aws.amazon.com/vpn/client-vpn-download/),
+  which provides the signed `acvc-openvpn` binary.
+- Go 1.24 or later.
 
 ## Install
 
-Source-first — you build it, so you never run someone else's prebuilt binary as
-root:
+Build it from source:
 
 ```sh
 go install github.com/lucassarcanjo/aws-vpn-cli@latest
 ```
 
-or from a clone:
+Or install from a clone:
 
 ```sh
 git clone https://github.com/lucassarcanjo/aws-vpn-cli && cd aws-vpn-cli
-make install          # builds with version metadata, installs to $GOBIN
+make install
 ```
 
-A Homebrew tap that **compiles from source** is provided in `Formula/awsvpn.rb`.
+`Formula/awsvpn.rb` provides a Homebrew formula that also builds from source.
 
 ## Usage
 
 ```sh
-awsvpn list                     # profiles (auto-discovered + imported)
+awsvpn list                     # profiles from AWS VPN Client + imports
 sudo awsvpn connect dev         # connect by name
-sudo awsvpn connect             # pick interactively (fzf if present, else a prompt)
+sudo awsvpn connect             # choose a profile
 awsvpn status                   # profile, assigned IP, uptime
-sudo awsvpn disconnect          # tear down, remove routes, restore DNS
-awsvpn logs -f                  # follow the current connection's log
-awsvpn import ./client.ovpn     # register a raw config you haven't added to the app
+sudo awsvpn disconnect          # remove routes and restore DNS
+awsvpn logs -f                  # follow the connection log
+awsvpn import ./client.ovpn     # register a config outside the AWS client
 awsvpn version
-sudo awsvpn install-privilege   # opt-in: narrow NOPASSWD rule for non-interactive use
+sudo awsvpn install-privilege   # opt-in NOPASSWD rule for automation
 ```
 
-Profiles are auto-discovered from the AWS VPN Client's store (read strictly
-**read-only** — we never write into it) and merged with anything you `import`.
-There is a **single active connection**; connecting while a tunnel is up swaps to
-the new one.
+`awsvpn` reads profiles from the AWS VPN Client without changing its store and
+merges them with imported profiles. It supports one active connection; a new
+connection replaces the current tunnel.
 
-## Threat model
+## Security
 
-What `awsvpn` protects you from, and — honestly — what it doesn't.
+- `awsvpn` verifies the AWS VPN binary immediately before it runs as root.
+- It binds the SAML callback to `127.0.0.1:35001` before opening your browser
+  and aborts if another process already owns the port.
+- Root-owned runtime state lives in `/var/run/awsvpn`; imported profiles remain
+  in your home directory.
+- The fixed AWS callback port, running the wrapper as root, and a passwordless
+  sudo rule each carry residual risk.
 
-**Mitigated**
-
-- *Running untrusted VPN code as root.* The privileged crypto is AWS's own signed
-  binary; our code is a small, vendored, readable layer.
-- *A swapped/tampered `acvc-openvpn`.* Verified against a pinned Apple team id
-  right before exec; hard-fail with an `--allow-unverified-binary` escape hatch
-  for a legitimate AWS identity change.
-- *The assertion recovered from disk or the process table.* It is kept in memory
-  and passed over the management socket — never a file, never argv.
-- *Secrets leaking into logs.* The SAML assertion and management password are
-  **hard-redacted** everywhere, even at `--verbose`; redacted forms show length
-  only.
-- *Handing the credential to the wrong listener.* The callback binds
-  `127.0.0.1:35001` **before** the browser opens and **aborts** if the port is
-  already taken (e.g. the official client is running), so we never proceed into a
-  hand-off we didn't initiate. It is loopback-only, one-shot, and times out.
-- *A crash leaving your resolver broken.* DNS revert state is persisted the moment
-  DNS is applied; the next `awsvpn` run restores your DNS if a prior connection
-  died. The full resolver dictionary (servers + search domains + domain name) is
-  captured and restored, so disconnect leaves resolution exactly as it found it.
-- *Root clobbering files through a planted symlink.* Privileged runtime state
-  (the active tunnel record, DNS revert data, management socket, connection log)
-  lives in the **root-owned** `/var/run/awsvpn`, never in your user-writable home,
-  so root's writes there can't be redirected through a symlink you (or malware
-  running as you) planted. User data (imported profiles) stays under your home,
-  written as you. Chowns use `Lchown` and the log opens `O_NOFOLLOW`.
-- *SIGTERM-ing an innocent process after PID reuse.* Before signalling a recorded
-  tunnel PID we confirm it is still an `acvc-openvpn` process, so a recycled PID is
-  never killed. The signature binary is also required to be root-owned and not
-  group/other-writable before we exec it.
-
-**Residual — documented, not solved**
-
-- **The localhost-callback race.** AWS fixes the SAML consumer at
-  `http://127.0.0.1:35001`. A hostile *local* process that binds that port
-  *before* us could receive your assertion. This is inherent to the fixed
-  loopback callback and is **shared by the official AWS client**. Our
-  bind-before-browser-or-abort guard ensures *we* never silently hand off, but it
-  cannot stop an attacker who wins the port race. On a single-user machine this is
-  low risk (such a process could already do worse).
-- **`awsvpn` runs fully as root.** This is a deliberate simplicity trade: the
-  whole wrapper is small enough to audit. It de-escalates to your user for
-  browser-open and profile discovery, and chowns any files it creates back to
-  you, but the process itself holds root while connecting.
-- **`install-privilege` is a standing grant.** It's opt-in, prints the exact rule,
-  validates with `visudo -c`, and is scoped to this one binary for one user — but
-  a NOPASSWD rule is still persistent attack surface. Remove it with
-  `sudo rm /etc/sudoers.d/awsvpn`. Prefer installing `awsvpn` to a root-owned,
-  non-user-writable location before using it.
-- **Signature-verify TOCTOU on a writable parent directory.** We verify
-  `acvc-openvpn` immediately before exec and require it to be root-owned and
-  non-writable, which stops a non-root swap. If the *containing directory* is
-  group/other-writable (some non-standard installs), a same-group user could still
-  race a swap between verify and exec. Keep the AWS app in its default root-owned
-  location.
-- **DNS follows the primary service at connect time, not changes during.** DNS is
-  applied to whichever network service is primary when the tunnel comes up.
-  If you switch networks (Wi-Fi↔Ethernet) mid-session, internal names may stop
-  resolving until you reconnect; disconnect still cleans up correctly. Also, v1
-  applies pushed DNS to the dynamic (`State:`) resolver and only IPv4 (`dhcp-option
-  DNS`); a manually-configured (`Setup:`) resolver, IPv6 DNS (`DNS6`), and
-  split-DNS are out of scope for v1.
-- **The connection log trusts openvpn's own redaction.** `acvc-openvpn`'s stdout is
-  written to the log directly (it must, so logging survives after `connect`
-  returns); at the pinned `--verb 3` it masks its own `password` commands, so no
-  secret is written. A future verbosity bump would need re-checking — our own log
-  lines are always redacted regardless.
-
-## The two AWS-owned constants
-
-Both live in `internal/config` so a future AWS change is a one-line update:
-
-- **Team identifier** pinned for the signature check: `94KV3E626L`
-- **Callback port** the endpoint expects: `35001`
+See the [full threat model and connection flow](docs/security.md).
 
 ## Development
 
 ```sh
-make test        # go test ./... (reducer transcript fixtures, parsers, callback, signature)
+make test
 make vet
-make vuln        # govulncheck (requires: go install golang.org/x/vuln/cmd/govulncheck@latest)
+make vuln        # requires: go install golang.org/x/vuln/cmd/govulncheck@latest
 make build
 ```
 
-The primary tested module is the connection reducer, fed scripted event sequences
-(including the real management transcript captured against a live endpoint) and
-asserted against emitted effects. The impure system port is validated end-to-end
-against a real endpoint, not unit-tested.
-
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
