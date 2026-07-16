@@ -17,12 +17,7 @@ func newLogsCmd() *cobra.Command {
 		Short: "Show the current connection's log",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			u, err := mustUser()
-			if err != nil {
-				return err
-			}
-			path := config.LogPath(u.Home)
-			f, err := os.Open(path)
+			f, err := os.Open(config.LogPath())
 			if err != nil {
 				if os.IsNotExist(err) {
 					return fmt.Errorf("no log yet — connect first with `sudo awsvpn connect`")

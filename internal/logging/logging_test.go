@@ -16,9 +16,21 @@ func TestRedactPasswordCommand(t *testing.T) {
 	if !strings.Contains(out, "<redacted len=") {
 		t.Fatalf("expected a redaction placeholder: %q", out)
 	}
-	// The realm and command shape stay legible for debugging.
-	if !strings.Contains(out, `password "Auth"`) {
-		t.Errorf("over-redacted, lost realm: %q", out)
+	// The command keyword stays legible; everything after it is gone.
+	if !strings.Contains(out, `password "`) {
+		t.Errorf("lost the command keyword: %q", out)
+	}
+}
+
+func TestRedactSurvivesQuoteInjection(t *testing.T) {
+	// A malicious endpoint could embed a quote in the CRV1 state, which %q renders
+	// as \". Redacting the whole remainder (not a quoted sub-group) must still
+	// scrub the assertion tail rather than stop at the injected quote.
+	r := NewRedactor()
+	in := `>> password "Auth" "CRV1::inst\"ance::SECRETASSERTIONVALUE"`
+	out := r.Redact(in)
+	if strings.Contains(out, "SECRETASSERTIONVALUE") {
+		t.Fatalf("quote injection leaked the assertion: %q", out)
 	}
 }
 
@@ -32,13 +44,15 @@ func TestRedactRegisteredSecret(t *testing.T) {
 	}
 }
 
-func TestRedactACSNotOverRedacted(t *testing.T) {
+func TestRedactACSCommand(t *testing.T) {
 	// The first-auth password (ACS::port) is not secret, but it flows through the
-	// same password-command path, so it still gets length-redacted — that's fine
-	// and expected. Just verify we don't crash and produce a placeholder.
+	// same password-command path, so it still gets redacted — fine and expected.
 	r := NewRedactor()
 	out := r.Redact(`password "Auth" "ACS::35001"`)
-	if !strings.Contains(out, "<redacted len=10>") {
-		t.Errorf("ACS redaction = %q", out)
+	if strings.Contains(out, "ACS::35001") {
+		t.Errorf("value not redacted: %q", out)
+	}
+	if !strings.Contains(out, "<redacted len=") {
+		t.Errorf("expected a placeholder: %q", out)
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"syscall"
 )
 
 var teamIDRe = regexp.MustCompile(`(?m)^TeamIdentifier=(\S+)`)
@@ -24,11 +25,20 @@ var ErrNotInstalled = errors.New("acvc-openvpn not found")
 // error with the team identifier actually found, so the operator can tell a
 // tampered binary from a legitimate AWS signing-identity change.
 func Verify(binPath, teamID string) error {
-	if _, err := os.Stat(binPath); err != nil {
+	info, err := os.Stat(binPath)
+	if err != nil {
 		if os.IsNotExist(err) {
 			return fmt.Errorf("%w at %s — install the official AWS VPN Client from https://aws.amazon.com/vpn/client-vpn-download/", ErrNotInstalled, binPath)
 		}
 		return fmt.Errorf("cannot stat %s: %w", binPath, err)
+	}
+
+	// Defence-in-depth against a swap between this check and the exec: require the
+	// binary to be owned by root and not group/other-writable, so no non-root
+	// process can replace it after we verify it. (A group/other-writable *parent*
+	// directory is a residual TOCTOU documented in the threat model.)
+	if err := checkRootOwned(binPath, info); err != nil {
+		return err
 	}
 
 	req := fmt.Sprintf(`anchor apple generic and certificate leaf[subject.OU] = "%s"`, teamID)
@@ -50,6 +60,17 @@ func Verify(binPath, teamID string) error {
 			"  refusing to run an unverified binary as root; if AWS legitimately changed its\n"+
 			"  signing identity, re-run with --allow-unverified-binary",
 		binPath, detail, found, teamID)
+}
+
+// checkRootOwned refuses a binary that a non-root user could tamper with.
+func checkRootOwned(binPath string, info os.FileInfo) error {
+	if st, ok := info.Sys().(*syscall.Stat_t); ok && st.Uid != 0 {
+		return fmt.Errorf("refusing to run %s as root: it is owned by uid %d, not root", binPath, st.Uid)
+	}
+	if info.Mode().Perm()&0o022 != 0 {
+		return fmt.Errorf("refusing to run %s as root: it is group/other-writable (mode %o)", binPath, info.Mode().Perm())
+	}
+	return nil
 }
 
 // teamIdentifier best-effort extracts the signed team id for a friendlier error.

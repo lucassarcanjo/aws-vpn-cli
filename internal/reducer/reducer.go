@@ -169,11 +169,17 @@ func stepLine(s State, line string) (State, []Effect) {
 	// A rejected credential: either the expected CRV1 challenge (first attempt)
 	// or a genuine rejection (SAML expired / wrong endpoint).
 	case ovpn.IsVerificationFailed(line):
-		if c, ok := ovpn.ParseCRV1Challenge(line); ok && s.phase == PhaseAwaitChallenge {
-			s.crv1State = c.State
-			s.samlURL = c.SAMLURL
-			s.phase = PhaseAwaitSAML
-			return s, []Effect{OpenBrowser{URL: c.SAMLURL}}
+		if c, ok := ovpn.ParseCRV1Challenge(line); ok {
+			if s.phase == PhaseAwaitChallenge {
+				s.crv1State = c.State
+				s.samlURL = c.SAMLURL
+				s.phase = PhaseAwaitSAML
+				return s, []Effect{OpenBrowser{URL: c.SAMLURL}}
+			}
+			// A CRV1 challenge arriving after we already answered means the
+			// endpoint re-issued auth (assertion expired mid-flow). v1 does not
+			// auto-reauthenticate; report it clearly so the user reconnects.
+			return fail(s, "the VPN endpoint issued a new SAML challenge (session expired) — reconnect")
 		}
 		return fail(s, "the VPN endpoint rejected authentication")
 
@@ -187,8 +193,11 @@ func stepLine(s State, line string) (State, []Effect) {
 func stepPasswordNeed(s State, line string) (State, []Effect) {
 	realm := ovpn.ParsePasswordRealm(line)
 	switch s.phase {
-	case PhaseInit:
-		// First attempt: dummy creds that declare our callback port.
+	case PhaseInit, PhaseAwaitChallenge:
+		// First attempt (or a re-prompt before the challenge arrived, e.g. the
+		// engine's auth window expired and it soft-restarted): send the dummy
+		// creds that declare our callback port. Re-sending is idempotent; an
+		// endpoint that never challenges is bounded by the connect deadline.
 		s.phase = PhaseAwaitChallenge
 		s.realm = realm
 		return s, []Effect{

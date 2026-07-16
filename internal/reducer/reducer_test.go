@@ -168,6 +168,50 @@ func TestSAMLBeforeSecondPrompt(t *testing.T) {
 	}
 }
 
+// TestRepeatNeedBeforeChallenge: if the engine re-prompts for credentials before
+// the CRV1 challenge arrives (e.g. its auth window expired and it soft-restarted),
+// the reducer must re-send the dummy creds, not silently ignore the prompt.
+func TestRepeatNeedBeforeChallenge(t *testing.T) {
+	r := newRunner()
+	r.line(lineHold0).
+		line(lineNeed).   // first prompt -> ACS creds
+		line(lineReconn). // soft restart, no challenge delivered
+		line(lineHold1).  // re-hold -> release
+		line(lineNeed)    // re-prompt in PhaseAwaitChallenge -> must re-send ACS creds
+
+	cmds := r.sendMgmtCmds()
+	// Expect the ACS password to have been sent twice (once per Need).
+	acs := 0
+	for _, c := range cmds {
+		if c == `password "Auth" "ACS::35001"` {
+			acs++
+		}
+	}
+	if acs != 2 {
+		t.Fatalf("ACS creds sent %d times, want 2 (re-prompt must be answered): %v", acs, cmds)
+	}
+	if r.state.Phase() != PhaseAwaitChallenge {
+		t.Errorf("phase = %v, want AwaitChallenge", r.state.Phase())
+	}
+}
+
+// TestLateReChallengeFails: a CRV1 challenge arriving after we already submitted
+// the assertion (session expired mid-flow) fails with a clear reconnect message,
+// not a misleading "rejected" one, and does not loop.
+func TestLateReChallengeFails(t *testing.T) {
+	r := newRunner()
+	r.line(lineHold0).line(lineNeed).line(lineChallenge).line(lineHold1).
+		line(lineNeed).send(SAMLCaptured{Raw: rawSAMLAssertion}). // now PhaseConnecting
+		line(lineChallenge)                                       // a fresh challenge arrives late
+
+	if r.state.Phase() != PhaseFailed {
+		t.Fatalf("phase = %v, want Failed", r.state.Phase())
+	}
+	if !strings.Contains(r.state.FailReason(), "session expired") {
+		t.Errorf("fail reason = %q, want a session-expired/reconnect message", r.state.FailReason())
+	}
+}
+
 // TestHardAuthFailure: a hard AUTH_FAILED (no CRV1) on the first attempt fails.
 func TestHardAuthFailure(t *testing.T) {
 	r := newRunner()

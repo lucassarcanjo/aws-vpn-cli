@@ -28,6 +28,7 @@ type Server struct {
 	ln      net.Listener
 	srv     *http.Server
 	results chan Result
+	done    chan struct{}
 	once    sync.Once
 }
 
@@ -38,7 +39,7 @@ func Listen(addr string) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot bind %s (is the official AWS VPN Client running?): %w", addr, err)
 	}
-	return &Server{ln: ln, results: make(chan Result, 1)}, nil
+	return &Server{ln: ln, results: make(chan Result, 1), done: make(chan struct{})}, nil
 }
 
 // Addr is the bound address.
@@ -53,7 +54,7 @@ func (s *Server) Results() <-chan Result { return s.results }
 func (s *Server) Serve(ssoTimeout time.Duration) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.handle)
-	s.srv = &http.Server{Handler: mux}
+	s.srv = &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 
 	go func() {
 		// Serve blocks until Close; errors other than the expected shutdown are
@@ -66,23 +67,29 @@ func (s *Server) Serve(ssoTimeout time.Duration) {
 	go func() {
 		timer := time.NewTimer(ssoTimeout)
 		defer timer.Stop()
-		<-timer.C
-		s.deliver(Result{Err: fmt.Errorf("timed out after %s waiting for SSO", ssoTimeout)})
+		select {
+		case <-timer.C:
+			s.deliver(Result{Err: fmt.Errorf("timed out after %s waiting for SSO", ssoTimeout)})
+		case <-s.done: // capture already happened; exit promptly instead of lingering
+		}
 	}()
 }
 
 func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
-	// FormValue reads both the query string and a POST body form.
-	saml := r.FormValue("SAMLResponse")
+	// The IdP delivers the assertion via the SAML HTTP POST binding. We accept it
+	// ONLY from a POST body and never from the query string, so a local web page
+	// the user happens to load during the SSO window cannot inject an
+	// attacker-chosen assertion (or DoS the capture) via <img src=".../?SAMLResponse=…">.
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	saml := r.PostFormValue("SAMLResponse")
 	if saml == "" {
-		// Only a genuine callback attempt (POST) without an assertion is an error;
-		// stray GETs are ignored so a favicon probe doesn't abort the flow.
-		if r.Method == http.MethodPost {
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.WriteHeader(http.StatusBadRequest)
-			_, _ = w.Write(web.ErrorPage())
-			s.deliver(Result{Err: errors.New("callback received without a SAMLResponse")})
-		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write(web.ErrorPage())
+		s.deliver(Result{Err: errors.New("callback POST had no SAMLResponse")})
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -95,6 +102,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 func (s *Server) deliver(r Result) {
 	s.once.Do(func() {
 		s.results <- r
+		close(s.done) // let the timeout goroutine exit promptly
 		// Give the response a moment to flush before tearing the listener down.
 		go func() {
 			time.Sleep(150 * time.Millisecond)

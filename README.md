@@ -138,7 +138,18 @@ What `awsvpn` protects you from, and — honestly — what it doesn't.
   hand-off we didn't initiate. It is loopback-only, one-shot, and times out.
 - *A crash leaving your resolver broken.* DNS revert state is persisted the moment
   DNS is applied; the next `awsvpn` run restores your DNS if a prior connection
-  died.
+  died. The full resolver dictionary (servers + search domains + domain name) is
+  captured and restored, so disconnect leaves resolution exactly as it found it.
+- *Root clobbering files through a planted symlink.* Privileged runtime state
+  (the active tunnel record, DNS revert data, management socket, connection log)
+  lives in the **root-owned** `/var/run/awsvpn`, never in your user-writable home,
+  so root's writes there can't be redirected through a symlink you (or malware
+  running as you) planted. User data (imported profiles) stays under your home,
+  written as you. Chowns use `Lchown` and the log opens `O_NOFOLLOW`.
+- *SIGTERM-ing an innocent process after PID reuse.* Before signalling a recorded
+  tunnel PID we confirm it is still an `acvc-openvpn` process, so a recycled PID is
+  never killed. The signature binary is also required to be root-owned and not
+  group/other-writable before we exec it.
 
 **Residual — documented, not solved**
 
@@ -158,6 +169,24 @@ What `awsvpn` protects you from, and — honestly — what it doesn't.
   a NOPASSWD rule is still persistent attack surface. Remove it with
   `sudo rm /etc/sudoers.d/awsvpn`. Prefer installing `awsvpn` to a root-owned,
   non-user-writable location before using it.
+- **Signature-verify TOCTOU on a writable parent directory.** We verify
+  `acvc-openvpn` immediately before exec and require it to be root-owned and
+  non-writable, which stops a non-root swap. If the *containing directory* is
+  group/other-writable (some non-standard installs), a same-group user could still
+  race a swap between verify and exec. Keep the AWS app in its default root-owned
+  location.
+- **DNS follows the primary service at connect time, not changes during.** DNS is
+  applied to whichever network service is primary when the tunnel comes up.
+  If you switch networks (Wi-Fi↔Ethernet) mid-session, internal names may stop
+  resolving until you reconnect; disconnect still cleans up correctly. Also, v1
+  applies pushed DNS to the dynamic (`State:`) resolver and only IPv4 (`dhcp-option
+  DNS`); a manually-configured (`Setup:`) resolver, IPv6 DNS (`DNS6`), and
+  split-DNS are out of scope for v1.
+- **The connection log trusts openvpn's own redaction.** `acvc-openvpn`'s stdout is
+  written to the log directly (it must, so logging survives after `connect`
+  returns); at the pinned `--verb 3` it masks its own `password` commands, so no
+  secret is written. A future verbosity bump would need re-checking — our own log
+  lines are always redacted regardless.
 
 ## The two AWS-owned constants
 

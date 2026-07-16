@@ -44,7 +44,7 @@ func newConnectCmd() *cobra.Command {
 				return err
 			}
 
-			logFile, err := daemon.PrepareLog(u.Home, u)
+			logFile, err := daemon.PrepareLog()
 			if err != nil {
 				return err
 			}
@@ -58,8 +58,6 @@ func newConnectCmd() *cobra.Command {
 			logger := logging.New(out, red, verbose)
 
 			run, err := daemon.Connect(daemon.Options{
-				Home:            u.Home,
-				User:            u,
 				Profile:         prof,
 				Sys:             system.NewReal(u),
 				Logger:          logger,

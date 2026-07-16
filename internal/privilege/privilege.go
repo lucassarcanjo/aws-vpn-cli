@@ -6,6 +6,7 @@ package privilege
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/user"
@@ -25,15 +26,18 @@ type User struct {
 // IsRoot reports whether the process is running as root.
 func IsRoot() bool { return os.Geteuid() == 0 }
 
-// Invoking resolves the real user. Under sudo it follows $SUDO_USER; otherwise it
-// is the current user. This is the single source of truth for "as me" behaviour.
+// Invoking resolves the real user. Only when we are actually root do we follow
+// $SUDO_USER (so a non-root process can't set SUDO_USER to read another user's
+// state/home); otherwise it is the current user.
 func Invoking() (User, error) {
-	if name := os.Getenv("SUDO_USER"); name != "" && name != "root" {
-		u, err := user.Lookup(name)
-		if err != nil {
-			return User{}, fmt.Errorf("resolving SUDO_USER %q: %w", name, err)
+	if IsRoot() {
+		if name := os.Getenv("SUDO_USER"); name != "" && name != "root" {
+			u, err := user.Lookup(name)
+			if err != nil {
+				return User{}, fmt.Errorf("resolving SUDO_USER %q: %w", name, err)
+			}
+			return fromOS(u)
 		}
-		return fromOS(u)
 	}
 	u, err := user.Current()
 	if err != nil {
@@ -54,16 +58,19 @@ func fromOS(u *user.User) (User, error) {
 	return User{Name: u.Username, UID: uid, GID: gid, Home: u.HomeDir}, nil
 }
 
-// Chown gives a single path back to the user. A no-op if we're not root (nothing
-// to hand back).
+// Chown gives a single path back to the user. Uses Lchown so a symlink planted at
+// the path can't redirect the ownership change to an arbitrary target. A no-op if
+// we're not root (nothing to hand back).
 func (u User) Chown(path string) error {
 	if !IsRoot() {
 		return nil
 	}
-	return os.Chown(path, u.UID, u.GID)
+	return os.Lchown(path, u.UID, u.GID)
 }
 
-// ChownTree recursively hands a directory tree back to the user.
+// ChownTree recursively hands a directory tree back to the user. filepath.Walk
+// does not descend into symlinked directories (it Lstats), and we Lchown each
+// entry, so no symlink is ever followed to chown an off-tree target.
 func (u User) ChownTree(root string) error {
 	if !IsRoot() {
 		return nil
@@ -72,7 +79,7 @@ func (u User) ChownTree(root string) error {
 		if err != nil {
 			return err
 		}
-		return os.Chown(p, u.UID, u.GID)
+		return os.Lchown(p, u.UID, u.GID)
 	})
 }
 
@@ -85,20 +92,37 @@ func (u User) EnsureDir(path string) error {
 	return u.ChownTree(path)
 }
 
-// OpenBrowser opens url as the invoking user. Under root we route through the
+// OpenBrowser opens rawURL as the invoking user. Under root we route through the
 // user's GUI session (`launchctl asuser`) so the SSO tab lands in their
-// logged-in browser rather than root's non-existent session.
-func (u User) OpenBrowser(url string) error {
+// logged-in browser rather than root's non-existent session. The URL comes from
+// the (authenticated, x509-verified) endpoint, but we still validate its scheme
+// so a hostile endpoint can't make `open` launch a file:// or custom-scheme
+// handler, or inject an `open` flag via a leading dash.
+func (u User) OpenBrowser(rawURL string) error {
+	if err := validateBrowserURL(rawURL); err != nil {
+		return err
+	}
 	var cmd *exec.Cmd
 	if IsRoot() && os.Getenv("SUDO_USER") != "" && os.Getenv("SUDO_USER") != "root" {
 		// launchctl asuser <uid> sudo -u <name> open <url>
 		cmd = exec.Command("launchctl", "asuser", strconv.Itoa(u.UID),
-			"sudo", "-u", u.Name, "open", url)
+			"sudo", "-u", u.Name, "open", rawURL)
 	} else {
-		cmd = exec.Command("open", url)
+		cmd = exec.Command("open", rawURL)
 	}
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("opening browser: %w: %s", err, out)
+	}
+	return nil
+}
+
+func validateBrowserURL(rawURL string) error {
+	pu, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("refusing to open a malformed SSO URL: %w", err)
+	}
+	if pu.Scheme != "https" && pu.Scheme != "http" {
+		return fmt.Errorf("refusing to open SSO URL with non-http(s) scheme %q", pu.Scheme)
 	}
 	return nil
 }

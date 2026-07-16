@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/larcanjo/awsvpn/internal/config"
 	"github.com/larcanjo/awsvpn/internal/profile"
@@ -47,11 +48,21 @@ func newImportCmd() *cobra.Command {
 				return err
 			}
 			dst := filepath.Join(dir, profName+".ovpn")
-			if err := os.WriteFile(dst, data, 0o600); err != nil {
+			// O_NOFOLLOW so a planted symlink at the destination can't redirect the
+			// write (matters if `import` is run under sudo, writing as root).
+			f, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC|syscall.O_NOFOLLOW, 0o600)
+			if err != nil {
+				return fmt.Errorf("writing %s: %w", dst, err)
+			}
+			if _, err := f.Write(data); err != nil {
+				f.Close()
+				return err
+			}
+			if err := f.Close(); err != nil {
 				return err
 			}
 			// Hand the store back to the user (in case this ran under sudo).
-			_ = u.ChownTree(config.StateDir(u.Home))
+			_ = u.ChownTree(config.UserDataDir(u.Home))
 
 			p, err := profile.Find(u.Home, profName)
 			if err != nil {

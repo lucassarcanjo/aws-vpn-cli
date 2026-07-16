@@ -24,7 +24,7 @@ func newDisconnectCmd() *cobra.Command {
 				return err
 			}
 			logger := logging.New(os.Stderr, logging.NewRedactor(), verbose)
-			profile, err := daemon.Disconnect(u.Home, system.NewReal(u), logger)
+			profile, err := daemon.Disconnect(system.NewReal(u), logger)
 			if err != nil {
 				return err
 			}
@@ -48,7 +48,7 @@ func newStatusCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			run, live, err := daemon.Status(u.Home)
+			run, live, err := daemon.Status(system.NewReal(u))
 			if err != nil {
 				return err
 			}

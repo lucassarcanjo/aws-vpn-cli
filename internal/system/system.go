@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
+	"strings"
 	"syscall"
 
 	"github.com/larcanjo/awsvpn/internal/dns"
@@ -25,6 +27,9 @@ type Port interface {
 	ApplyDNS(servers []string) (dns.Backup, error)
 	RevertDNS(b dns.Backup) error
 	Kill(pid int) error
+	// IsOpenVPN reports whether pid is (still) an acvc-openvpn process, so a
+	// teardown never SIGTERMs a recycled pid that now belongs to something else.
+	IsOpenVPN(pid int) bool
 }
 
 // SpawnSpec configures the acvc-openvpn launch.
@@ -90,4 +95,17 @@ func (r *Real) Kill(pid int) error {
 		return nil
 	}
 	return syscall.Kill(pid, syscall.SIGTERM)
+}
+
+// IsOpenVPN checks that pid currently maps to an acvc-openvpn process, guarding
+// against PID reuse (the recorded openvpn died and its pid was recycled).
+func (r *Real) IsOpenVPN(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	out, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "comm=").Output()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(out), "acvc-openvpn")
 }

@@ -6,7 +6,6 @@ import (
 )
 
 func TestParsePrimaryService(t *testing.T) {
-	// Real `scutil` output shape for State:/Network/Global/IPv4.
 	const out = `<dictionary> {
   PrimaryInterface : en0
   PrimaryService : 37A55208-54F1-4015-BA5B-BBA724AB9B09
@@ -20,9 +19,9 @@ func TestParsePrimaryService(t *testing.T) {
 	}
 }
 
-func TestParseServerAddresses(t *testing.T) {
-	// Real `scutil` output shape for a service's DNS dictionary.
-	const out = `<dictionary> {
+// A real DNS dictionary with both arrays and a scalar, exercising the exact
+// shape scutil emits.
+const realDNSDict = `<dictionary> {
   DomainName : Home
   ServerAddresses : <array> {
     0 : 192.168.15.1
@@ -30,23 +29,49 @@ func TestParseServerAddresses(t *testing.T) {
   }
   SearchDomains : <array> {
     0 : Home
+    1 : corp.example.com
   }
 }`
-	got := parseServerAddresses(out)
+
+func TestParseArray_ServerAddresses(t *testing.T) {
+	got := parseArray(realDNSDict, "ServerAddresses")
 	want := []string{"192.168.15.1", "fe80::ea45:8bff:fe68:af90"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("servers = %v, want %v", got, want)
 	}
 }
 
-func TestParseServerAddresses_None(t *testing.T) {
-	// A DNS dict with only search domains — no ServerAddresses to capture.
-	const out = `<dictionary> {
+func TestParseArray_SearchDomains(t *testing.T) {
+	got := parseArray(realDNSDict, "SearchDomains")
+	want := []string{"Home", "corp.example.com"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("search domains = %v, want %v", got, want)
+	}
+}
+
+func TestParseScalar_DomainName(t *testing.T) {
+	if got := parseScalar(realDNSDict, "DomainName"); got != "Home" {
+		t.Errorf("domain name = %q, want Home", got)
+	}
+	// A scalar lookup must not accidentally match an array key of similar name.
+	if got := parseScalar(realDNSDict, "ServerAddresses"); got != "" {
+		t.Errorf("scalar lookup matched an array: %q", got)
+	}
+}
+
+func TestCaptureBackup_SearchDomainsOnly(t *testing.T) {
+	// The regression the revert fix targets: a DNS dict with only SearchDomains
+	// (no ServerAddresses) must still be captured as HadDNS so revert restores it
+	// rather than deleting the key.
+	const searchOnly = `<dictionary> {
   SearchDomains : <array> {
     0 : Home
   }
 }`
-	if got := parseServerAddresses(out); len(got) != 0 {
+	if got := parseArray(searchOnly, "ServerAddresses"); len(got) != 0 {
 		t.Errorf("expected no servers, got %v", got)
+	}
+	if got := parseArray(searchOnly, "SearchDomains"); !reflect.DeepEqual(got, []string{"Home"}) {
+		t.Errorf("search domains = %v, want [Home]", got)
 	}
 }

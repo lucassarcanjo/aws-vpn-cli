@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"syscall"
 	"time"
 
 	"github.com/larcanjo/awsvpn/internal/callback"
@@ -15,42 +16,47 @@ import (
 	"github.com/larcanjo/awsvpn/internal/dns"
 	"github.com/larcanjo/awsvpn/internal/logging"
 	"github.com/larcanjo/awsvpn/internal/mgmt"
-	"github.com/larcanjo/awsvpn/internal/privilege"
 	"github.com/larcanjo/awsvpn/internal/profile"
 	"github.com/larcanjo/awsvpn/internal/reducer"
 	"github.com/larcanjo/awsvpn/internal/state"
 	"github.com/larcanjo/awsvpn/internal/system"
 )
 
-// DefaultSSOTimeout bounds how long we wait for the user to complete SSO.
-const DefaultSSOTimeout = 3 * time.Minute
+const (
+	// DefaultSSOTimeout bounds how long we wait for the user to complete SSO.
+	DefaultSSOTimeout = 3 * time.Minute
+	// connectSlack is added to the SSO timeout to bound the rest of the handshake
+	// (pre-challenge and post-assertion negotiation), so connect never hangs.
+	connectSlack = 2 * time.Minute
+)
 
 // Options configures a connect.
 type Options struct {
-	Home            string
-	User            privilege.User
 	Profile         profile.Profile
 	Sys             system.Port
 	Logger          *logging.Logger
 	LogFile         *os.File // acvc-openvpn's stdout/stderr sink (owned by the caller)
 	AllowUnverified bool
 	SSOTimeout      time.Duration
+	ConnectTimeout  time.Duration // overall deadline; defaults to SSOTimeout + slack
 }
 
 // Connect brings up the tunnel and returns once it reaches CONNECTED, leaving
-// acvc-openvpn running in the background. It is the single entry point for the
-// `connect` command.
+// acvc-openvpn running in the background.
 func Connect(o Options) (state.Run, error) {
 	if o.SSOTimeout == 0 {
 		o.SSOTimeout = DefaultSSOTimeout
 	}
+	if o.ConnectTimeout == 0 {
+		o.ConnectTimeout = o.SSOTimeout + connectSlack
+	}
 
 	// A prior connection that already died leaves DNS pointed at an unreachable
-	// resolver; clean that up before we start. A still-live one is swapped.
-	CleanupStale(o.Home, o.Sys, o.Logger)
-	if r, ok, _ := state.Load(o.Home); ok && r.Alive() {
+	// resolver; clean that up first. A genuinely live one is swapped.
+	CleanupStale(o.Sys, o.Logger)
+	if r, ok, _ := state.Load(); ok && r.Alive() && o.Sys.IsOpenVPN(r.OvpnPID) {
 		o.Logger.Info("swapping active tunnel (%s → %s)", r.Profile, o.Profile.Name)
-		if err := teardown(o.Home, o.Sys, r, o.Logger); err != nil {
+		if err := teardown(o.Sys, r, o.Logger); err != nil {
 			o.Logger.Info("warning: could not cleanly stop the previous tunnel: %v", err)
 		}
 	}
@@ -63,15 +69,16 @@ func Connect(o Options) (state.Run, error) {
 	}
 	defer cb.Close()
 
-	// Verify the AWS signature right before we run the binary as root.
+	sock := config.MgmtSocketPath()
+	_ = os.Remove(sock) // clear any stale socket
+
+	// Verify the AWS signature as the last thing before we exec the binary as
+	// root, to minimise the check-to-use window.
 	if o.AllowUnverified {
 		o.Logger.Info("WARNING: --allow-unverified-binary set; skipping signature verification")
 	} else if err := o.Sys.VerifySignature(config.ACVCOpenVPNPath, config.AWSTeamID); err != nil {
 		return state.Run{}, err
 	}
-
-	sock := config.MgmtSocketPath(o.Home)
-	_ = os.Remove(sock) // clear any stale socket
 
 	o.Logger.Info("starting acvc-openvpn for profile %q", o.Profile.Name)
 	pid, err := o.Sys.SpawnOpenVPN(system.SpawnSpec{
@@ -85,52 +92,59 @@ func Connect(o Options) (state.Run, error) {
 		return state.Run{}, err
 	}
 
+	// Record the PID/socket immediately so that if this wrapper is killed before
+	// CONNECTED, the next run can find and tear down the orphaned tunnel.
+	_ = state.Save(state.Run{
+		Profile:    o.Profile.Name,
+		OvpnPID:    pid,
+		MgmtSocket: sock,
+		LogPath:    config.LogPath(),
+	})
+
 	client, err := mgmt.Dial(sock, 10*time.Second)
 	if err != nil {
 		_ = o.Sys.Kill(pid)
+		_ = state.Clear()
 		return state.Run{}, err
 	}
 	defer client.Close()
 
-	run, err := drive(o, client, cb, pid, sock)
+	run, err := drive(o, client, pid, sock, cb)
 	if err != nil {
 		_ = o.Sys.Kill(pid)
-		// Immediately restore DNS if the attempt applied it before failing,
-		// rather than leaving it for the next run's crash cleanup.
-		revertDNS(o.Home, o.Sys, o.Logger)
+		revertDNS(o.Sys, o.Logger)
+		_ = state.Clear()
 		return state.Run{}, err
 	}
-	if err := state.Save(o.Home, run); err != nil {
+	if err := state.Save(run); err != nil {
 		return state.Run{}, fmt.Errorf("recording connection state: %w", err)
 	}
-	// Hand freshly-written state/log files back to the user.
-	_ = o.User.ChownTree(config.StateDir(o.Home))
 	return run, nil
 }
 
-// PrepareLog opens (truncating) the connection log file and hands it back to the
-// invoking user so their non-sudo `awsvpn logs` can read it. The caller owns the
-// returned file; acvc-openvpn inherits the fd and keeps writing after the connect
-// command exits.
-func PrepareLog(home string, u privilege.User) (*os.File, error) {
-	if err := os.MkdirAll(config.StateDir(home), 0o755); err != nil {
+// PrepareLog opens the root-owned connection log. O_NOFOLLOW (belt-and-suspenders
+// — the dir is root-owned) refuses a planted symlink; O_APPEND makes the parent
+// logger's and openvpn's writes to the shared fd atomic rather than interleaved.
+func PrepareLog() (*os.File, error) {
+	if err := state.EnsureRuntimeDir(); err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(config.LogPath(home), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
-	if err != nil {
-		return nil, err
-	}
-	_ = u.Chown(config.LogPath(home))
-	return f, nil
+	return os.OpenFile(config.LogPath(),
+		os.O_CREATE|os.O_WRONLY|os.O_TRUNC|os.O_APPEND|syscall.O_NOFOLLOW, 0o644)
 }
 
-// drive is the event loop: it feeds management lines and the captured assertion
-// into the pure reducer and performs the effects the reducer emits.
-func drive(o Options, client *mgmt.Client, cb *callback.Server, pid int, sock string) (state.Run, error) {
+// drive is the event loop: it feeds management lines, the captured assertion, and
+// an overall deadline into the pure reducer and performs the effects it emits.
+func drive(o Options, client *mgmt.Client, pid int, sock string, cb *callback.Server) (state.Run, error) {
 	st := reducer.Initial(config.CallbackPort)
 	lines := client.Lines()
 	var samlCh <-chan callback.Result
 	var dnsBackup dns.Backup
+
+	// Bound the WHOLE connect, not just the browser wait — otherwise a stall
+	// before the challenge or after the assertion would hang forever.
+	deadline := time.NewTimer(o.ConnectTimeout)
+	defer deadline.Stop()
 
 	for {
 		var ev reducer.Event
@@ -151,6 +165,9 @@ func drive(o Options, client *mgmt.Client, cb *callback.Server, pid int, sock st
 				o.Logger.Info("SAML assertion captured (%d bytes)", len(res.SAML))
 				ev = reducer.SAMLCaptured{Raw: res.SAML}
 			}
+		case <-deadline.C:
+			o.Logger.Info("connect timed out after %s", o.ConnectTimeout)
+			ev = reducer.Timeout{}
 		}
 
 		var effects []reducer.Effect
@@ -177,9 +194,7 @@ func drive(o Options, client *mgmt.Client, cb *callback.Server, pid int, sock st
 					break
 				}
 				dnsBackup = b
-				// Persist immediately so a death before CONNECTED is still
-				// revertible on the next run.
-				if err := state.SaveDNSBackup(o.Home, b); err != nil {
+				if err := state.SaveDNSBackup(b); err != nil {
 					o.Logger.Info("warning: could not persist DNS backup: %v", err)
 				}
 				o.Logger.Info("applied pushed DNS: %v", eff.Servers)
@@ -189,7 +204,7 @@ func drive(o Options, client *mgmt.Client, cb *callback.Server, pid int, sock st
 					Profile:     o.Profile.Name,
 					OvpnPID:     pid,
 					MgmtSocket:  sock,
-					LogPath:     config.LogPath(o.Home),
+					LogPath:     config.LogPath(),
 					AssignedIP:  eff.Info.AssignedIP,
 					RemoteIP:    eff.Info.RemoteIP,
 					Port:        eff.Info.Port,
@@ -201,7 +216,7 @@ func drive(o Options, client *mgmt.Client, cb *callback.Server, pid int, sock st
 			case reducer.Failed:
 				if dnsBackup.ServiceID != "" {
 					_ = o.Sys.RevertDNS(dnsBackup)
-					_ = state.ClearDNSBackup(o.Home)
+					_ = state.ClearDNSBackup()
 				}
 				return state.Run{}, fmt.Errorf("connection failed: %s", eff.Reason)
 			}

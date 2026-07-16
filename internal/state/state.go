@@ -1,6 +1,8 @@
-// Package state persists the single active connection so `status` and
-// `disconnect` can control an out-of-band background tunnel, and so a crashed
-// prior connection can be detected and cleaned up on the next connect.
+// Package state persists the single active connection under the root-owned
+// runtime dir so `status` and `disconnect` can control an out-of-band background
+// tunnel, and so a crashed prior connection can be detected and cleaned up on the
+// next connect. State is machine-global (one tunnel) and root-owned; non-root
+// commands read it (files are world-readable) but cannot tamper with it.
 package state
 
 import (
@@ -16,10 +18,10 @@ import (
 	"github.com/larcanjo/awsvpn/internal/ovpn"
 )
 
-// Run records everything needed to observe and tear down the active tunnel. The
-// DNS revert state is stored separately (see SaveDNSBackup) because it must be
-// persisted the instant DNS is applied — before the tunnel is fully up — so a
-// death in that window still leaves a revertible marker.
+// Run records everything needed to observe and tear down the active tunnel. It is
+// written once with the PID/socket right after spawn (so a crash before the
+// tunnel is up still leaves a killable record) and again at CONNECTED with the
+// assignment details. A zero ConnectedAt means "still connecting".
 type Run struct {
 	Profile     string       `json:"profile"`
 	OvpnPID     int          `json:"ovpn_pid"`
@@ -34,22 +36,27 @@ type Run struct {
 	FullTunnel  bool         `json:"full_tunnel"`
 }
 
-// Save writes the run state for a user home, creating the state dir if needed.
-func Save(home string, r Run) error {
-	if err := os.MkdirAll(config.StateDir(home), 0o755); err != nil {
+// EnsureRuntimeDir creates the root-owned runtime dir (0755: root-writable,
+// world-readable so non-sudo status/logs work). Must be called as root.
+func EnsureRuntimeDir() error {
+	return os.MkdirAll(config.RuntimeDir, 0o755)
+}
+
+// Save writes the active connection record.
+func Save(r Run) error {
+	if err := EnsureRuntimeDir(); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(r, "", "  ")
 	if err != nil {
 		return err
 	}
-	return writeAtomic(config.RunStatePath(home), data, 0o644)
+	return writeAtomic(config.RunStatePath(), data, 0o644)
 }
 
-// Load reads the run state. ok=false means there is no active connection on
-// record.
-func Load(home string) (Run, bool, error) {
-	data, err := os.ReadFile(config.RunStatePath(home))
+// Load reads the run state. ok=false means no active connection on record.
+func Load() (Run, bool, error) {
+	data, err := os.ReadFile(config.RunStatePath())
 	if errors.Is(err, os.ErrNotExist) {
 		return Run{}, false, nil
 	}
@@ -64,32 +71,26 @@ func Load(home string) (Run, bool, error) {
 }
 
 // Clear removes the run state record.
-func Clear(home string) error {
-	err := os.Remove(config.RunStatePath(home))
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	return err
+func Clear() error {
+	return removeIfExists(config.RunStatePath())
 }
 
-// SaveDNSBackup persists the resolver state to revert to. It is written the
-// moment DNS is applied so the next run can restore DNS even if this connection
-// dies before it is fully established — the crash-safety net.
-func SaveDNSBackup(home string, b dns.Backup) error {
-	if err := os.MkdirAll(config.StateDir(home), 0o755); err != nil {
+// SaveDNSBackup persists the resolver state to revert to, written the moment DNS
+// is applied so a death before CONNECTED is still revertible on the next run.
+func SaveDNSBackup(b dns.Backup) error {
+	if err := EnsureRuntimeDir(); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(b, "", "  ")
 	if err != nil {
 		return err
 	}
-	return writeAtomic(config.DNSBackupPath(home), data, 0o644)
+	return writeAtomic(config.DNSBackupPath(), data, 0o644)
 }
 
-// LoadDNSBackup reads the pending resolver revert state. ok=false means no DNS
-// override is currently on record.
-func LoadDNSBackup(home string) (dns.Backup, bool, error) {
-	data, err := os.ReadFile(config.DNSBackupPath(home))
+// LoadDNSBackup reads the pending resolver revert state.
+func LoadDNSBackup() (dns.Backup, bool, error) {
+	data, err := os.ReadFile(config.DNSBackupPath())
 	if errors.Is(err, os.ErrNotExist) {
 		return dns.Backup{}, false, nil
 	}
@@ -104,22 +105,22 @@ func LoadDNSBackup(home string) (dns.Backup, bool, error) {
 }
 
 // ClearDNSBackup removes the pending resolver revert marker.
-func ClearDNSBackup(home string) error {
-	err := os.Remove(config.DNSBackupPath(home))
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	return err
+func ClearDNSBackup() error {
+	return removeIfExists(config.DNSBackupPath())
 }
 
-// Alive reports whether the recorded openvpn process is still running.
+// Alive reports whether the recorded openvpn process still exists. Note this is a
+// necessary but not sufficient signal — callers that will signal the process must
+// also confirm its identity (PID reuse), see daemon.teardown.
 func (r Run) Alive() bool {
 	if r.OvpnPID <= 0 {
 		return false
 	}
-	// Signal 0 probes existence without delivering a signal.
 	return syscall.Kill(r.OvpnPID, 0) == nil
 }
+
+// Connecting reports a record written at spawn that has not yet reached CONNECTED.
+func (r Run) Connecting() bool { return r.ConnectedAt.IsZero() }
 
 // Duration is how long the tunnel has been up.
 func (r Run) Duration() time.Duration {
@@ -127,6 +128,14 @@ func (r Run) Duration() time.Duration {
 		return 0
 	}
 	return time.Since(r.ConnectedAt)
+}
+
+func removeIfExists(path string) error {
+	err := os.Remove(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return err
 }
 
 func writeAtomic(path string, data []byte, perm os.FileMode) error {

@@ -13,9 +13,12 @@ import (
 	"time"
 )
 
-// passwordCmdRe matches a management password command and captures the quoted
-// value so it can be replaced with its length. Case-insensitive on the keyword.
-var passwordCmdRe = regexp.MustCompile(`(?i)(password\s+"[^"]*"\s+")([^"]*)(")`)
+// passwordCmdRe matches a management password command up to the opening quote of
+// its arguments and redacts EVERYTHING after it to end-of-line. Redacting the
+// whole remainder (rather than a quoted sub-group) means an endpoint-controlled
+// realm or CRV1 state containing an injected quote cannot terminate the match
+// early and leak the assertion tail. Per-line (?m) so it can't span messages.
+var passwordCmdRe = regexp.MustCompile(`(?im)(password\s+").*$`)
 
 // Redactor replaces registered secrets and structurally-detected password
 // commands with a length-only form. Safe for concurrent use.
@@ -51,7 +54,7 @@ func (r *Redactor) Redact(s string) string {
 	}
 	s = passwordCmdRe.ReplaceAllStringFunc(s, func(m string) string {
 		sub := passwordCmdRe.FindStringSubmatch(m)
-		return sub[1] + placeholder(len(sub[2])) + sub[3]
+		return sub[1] + placeholder(len(m)-len(sub[1]))
 	})
 	return s
 }
