@@ -7,13 +7,18 @@ LDFLAGS := -X $(PKG)/internal/version.Version=$(VERSION) \
            -X $(PKG)/internal/version.Commit=$(COMMIT) \
            -X $(PKG)/internal/version.Date=$(DATE)
 
+# Install destination: $GOBIN if set, otherwise $(go env GOPATH)/bin
+GOBIN  := $(shell go env GOBIN)
+GOBIN  := $(if $(GOBIN),$(GOBIN),$(shell go env GOPATH)/bin)
+
 .PHONY: build install test vet vuln tidy vendor clean
 
 build:
 	go build -ldflags "$(LDFLAGS)" -o bin/$(BINARY) .
 
-install:
-	go install -ldflags "$(LDFLAGS)" .
+install: build
+	install -m 0755 bin/$(BINARY) $(GOBIN)/$(BINARY)
+	@echo "Installed $(BINARY) to $(GOBIN)/$(BINARY)"
 
 test:
 	go test ./...
