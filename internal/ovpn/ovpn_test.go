@@ -122,6 +122,9 @@ func TestClassifiers(t *testing.T) {
 		// The soft-restart lines must NOT read as a hard auth failure.
 		{">STATE:1784222488,RECONNECTING,auth-failure,,,,,", IsAuthFailed, "IsAuthFailed(soft)", false},
 		{">LOG:1,I,SIGUSR1[soft,auth-failure] received, process restarting", IsAuthFailed, "IsAuthFailed(sigusr1)", false},
+		// The CRV1 challenge arrives as an AUTH_FAILED control message — it is the
+		// start of the SAML dance, not a hard failure.
+		{">LOG:1,N,AUTH: Received control message: AUTH_FAILED,CRV1:R:instance-1/766/664:b'Ti9B':https://login.microsoftonline.com/tenant/saml2?SAMLRequest=fZJP", IsAuthFailed, "IsAuthFailed(crv1)", false},
 	}
 	for _, c := range cases {
 		if got := c.pred(c.line); got != c.want {

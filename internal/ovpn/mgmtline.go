@@ -33,9 +33,13 @@ func IsFatal(line string) bool {
 // IsAuthFailed reports a hard authentication failure control message. Matched on
 // the exact uppercase token so the soft-restart lines ("auth-failure",
 // "SIGUSR1[soft,auth-failure]") — which are expected, not terminal — do not trip
-// it.
+// it. AWS delivers the first-attempt SAML challenge as "AUTH_FAILED,CRV1:...",
+// which with `log on` reaches us as a >LOG: line before the >PASSWORD:
+// notification that carries the same challenge; that variant is the start of the
+// auth dance, not a failure, so it must not match either.
 func IsAuthFailed(line string) bool {
-	return strings.Contains(line, "AUTH_FAILED")
+	return strings.Contains(line, "AUTH_FAILED") &&
+		!strings.Contains(line, "AUTH_FAILED,CRV1:")
 }
 
 // IsPushReply reports whether the line carries a PUSH_REPLY control message.

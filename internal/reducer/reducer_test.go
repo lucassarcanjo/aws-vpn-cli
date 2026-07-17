@@ -17,8 +17,11 @@ const (
 
 	linePushReply = `>LOG:1784222495,,PUSH: Received control message: 'PUSH_REPLY,dhcp-option DNS 10.0.0.2,route 10.0.0.0 255.255.0.0,route 172.16.8.0 255.255.248.0,route-gateway 10.8.0.129,topology subnet,ping 1,ping-restart 20,echo,echo,echo,ifconfig 10.8.0.133 255.255.255.224,peer-id 1,cipher AES-256-GCM,protocol-flags cc-exit tls-ekm dyn-tls-crypt,tun-mtu 1500'`
 
-	realState        = "instance-1/1234567890123456789/11111111-2222-3333-4444-555555555555"
-	lineChallenge    = `>PASSWORD:Verification Failed: 'Auth' ['CRV1:R,E:` + realState + `:dXNlcg==:https://login.microsoftonline.com/tenant/saml2?SAMLRequest=fZJRb9s']`
+	realState     = "instance-1/1234567890123456789/11111111-2222-3333-4444-555555555555"
+	lineChallenge = `>PASSWORD:Verification Failed: 'Auth' ['CRV1:R,E:` + realState + `:dXNlcg==:https://login.microsoftonline.com/tenant/saml2?SAMLRequest=fZJRb9s']`
+	// The same challenge as OpenVPN logs it on receipt — with `log on` this >LOG:
+	// line reaches the reducer BEFORE lineChallenge and must not read as fatal.
+	lineChallengeLog = `>LOG:1784305245,N,AUTH: Received control message: AUTH_FAILED,CRV1:R:` + realState + `:b'Ti9B':https://login.microsoftonline.com/tenant/saml2?SAMLRequest=fZJRb9s`
 	samlURL          = "https://login.microsoftonline.com/tenant/saml2?SAMLRequest=fZJRb9s"
 	rawSAMLAssertion = "PHNhbWxwOlJlc3BvbnNlPmZvbytiYXIvYmF6PT0mc2lnPXh4eA==" // has +, /, = to exercise url-encoding
 )
@@ -209,6 +212,39 @@ func TestLateReChallengeFails(t *testing.T) {
 	}
 	if !strings.Contains(r.state.FailReason(), "session expired") {
 		t.Errorf("fail reason = %q, want a session-expired/reconnect message", r.state.FailReason())
+	}
+}
+
+// TestChallengeLogLineNotFatal: the live transcript delivers the CRV1 challenge
+// twice — first as the AUTH_FAILED,CRV1 control message echoed on a >LOG: line,
+// then as the >PASSWORD:Verification Failed notification. The >LOG: variant must
+// be ignored (not treated as a hard AUTH_FAILED, and not answered — the
+// >PASSWORD: line is the single trigger for the browser), and the flow must
+// still reach Connected.
+func TestChallengeLogLineNotFatal(t *testing.T) {
+	r := newRunner()
+	r.line(lineHold0).
+		line(lineNeed).
+		line(lineChallengeLog). // logged control message — must be a no-op
+		line(lineChallenge).    // the real trigger -> open browser
+		line(lineReconn).
+		line(lineHold1).
+		line(lineNeed).
+		send(SAMLCaptured{Raw: rawSAMLAssertion}).
+		line(linePushReply).
+		line(lineConnect)
+
+	if r.state.Phase() != PhaseConnected {
+		t.Fatalf("phase = %v, want Connected; fail=%q", r.state.Phase(), r.state.FailReason())
+	}
+	browsers := 0
+	for _, e := range r.effects {
+		if _, ok := e.(OpenBrowser); ok {
+			browsers++
+		}
+	}
+	if browsers != 1 {
+		t.Errorf("browser opened %d times, want exactly 1", browsers)
 	}
 }
 
