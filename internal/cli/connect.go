@@ -15,6 +15,7 @@ import (
 	"github.com/lucassarcanjo/aws-vpn-cli/internal/logging"
 	"github.com/lucassarcanjo/aws-vpn-cli/internal/profile"
 	"github.com/lucassarcanjo/aws-vpn-cli/internal/system"
+	"github.com/lucassarcanjo/aws-vpn-cli/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -26,6 +27,9 @@ func newConnectCmd() *cobra.Command {
 		Long: "Connect to a profile by name, or with no argument pick one interactively.\n" +
 			"Returns control to your shell once the tunnel is up; the tunnel runs in the\n" +
 			"background until `awsvpn disconnect`.",
+		Example: "  sudo awsvpn connect dev\n" +
+			"  sudo awsvpn connect          # pick a profile\n" +
+			"  sudo awsvpn connect dev -v   # stream the raw connection log",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := requireRoot("connect"); err != nil {
@@ -52,12 +56,24 @@ func newConnectCmd() *cobra.Command {
 			}
 			defer logFile.Close()
 
-			// Log to the connection file (durable record) and mirror progress to
-			// stderr so the user sees what's happening. Both go through the same
-			// redactor, so the assertion can't leak to either.
+			// The connection log keeps the full, durable record. The terminal gets
+			// a narration of the same events written for a person — unless
+			// --verbose, where the raw log is mirrored to stderr as well (and the
+			// narration stops animating, so the two streams don't fight over a
+			// line). Both writers go through the same redactor, so the assertion
+			// can't leak to either.
 			red := logging.NewRedactor()
-			out := io.MultiWriter(logFile, os.Stderr)
+			out := io.Writer(logFile)
+			report := ui.NewSteps(os.Stderr)
+			if verbose {
+				out = io.MultiWriter(logFile, os.Stderr)
+				report = ui.NewStaticSteps(os.Stderr)
+			}
 			logger := logging.New(out, red, verbose)
+			defer report.Stop()
+
+			st := ui.For(os.Stderr)
+			fmt.Fprintf(os.Stderr, "\n%s %s\n\n", st.Dim("connecting to"), st.Bold(prof.Name))
 
 			// Boot out any supervisor from a prior connection BEFORE connecting.
 			// daemon.Connect tears down an existing tunnel as part of the swap; if
@@ -73,31 +89,34 @@ func newConnectCmd() *cobra.Command {
 				Sys:             system.NewReal(u),
 				Logger:          logger,
 				LogFile:         logFile,
+				UI:              report,
 				AllowUnverified: allowUnverified,
 			})
 			if err != nil {
-				return err
+				report.Stop()
+				return fmt.Errorf("%w\nWhat happened in full: awsvpn logs", err)
 			}
-
-			fmt.Printf("\nConnected to %s (%s). Your shell is free — the tunnel runs in the background.\n",
-				run.Profile, run.AssignedIP)
 
 			// Register the connection supervisor: a root LaunchDaemon that watches
 			// the tunnel and, if it drops and can't self-heal, tears it down
 			// cleanly (restoring DNS/routes) and notifies — so a sleep/outage never
 			// leaves the machine blackholed behind a dead tunnel. Non-fatal: the
 			// tunnel is up regardless; we just warn if auto-recovery is unavailable.
+			supervised := false
 			if self, exeErr := os.Executable(); exeErr != nil {
 				logger.Info("warning: could not locate this binary to start the supervisor: %v", exeErr)
+				report.Warn("auto-recovery on drop is off: could not locate this binary (%v)", exeErr)
 			} else if err := launchd.Install(launchd.Spec{
 				Exe: self, UID: u.UID, Profile: run.Profile, LogPath: config.LogPath(),
 			}); err != nil {
 				logger.Info("warning: connection supervisor not started (auto-recovery on drop disabled): %v", err)
+				report.Warn("auto-recovery on drop is off: %v", err)
 			} else {
-				fmt.Println("If the connection drops, it will be torn down automatically and you'll be notified.")
+				supervised = true
 			}
 
-			fmt.Println("Check it with `awsvpn status`; tear it down with `sudo awsvpn disconnect`.")
+			report.Stop()
+			printConnected(os.Stdout, run, supervised)
 			return nil
 		},
 	}
@@ -132,11 +151,20 @@ func pickWithFzf(profiles []profile.Profile) (profile.Profile, bool, error) {
 	if err != nil {
 		return profile.Profile{}, false, nil // fzf not installed; caller falls back
 	}
+	// Each line is a padded, human-readable column set followed by the exact
+	// profile name in a hidden field. fzf shows and searches only the first
+	// field (--with-nth=1); we read the name back from the second, so a profile
+	// name containing spaces still round-trips exactly.
+	width := nameWidth(profiles)
 	var input strings.Builder
 	for _, p := range profiles {
-		fmt.Fprintf(&input, "%s\t%s\t%s\n", p.Name, dash(p.Region), dash(p.EndpointID))
+		fmt.Fprintf(&input, "%s  %-14s %s\t%s\n",
+			pad(p.Name, width), dash(p.Region), dash(p.EndpointID), p.Name)
 	}
-	c := exec.Command(fzf, "--with-nth=1,2,3", "--delimiter=\t", "--prompt=profile> ", "--height=40%")
+	c := exec.Command(fzf,
+		"--delimiter=\t", "--with-nth=1", "--no-multi", "--reverse", "--height=40%",
+		"--prompt=profile "+ui.Arrow+" ",
+		"--header=enter to connect · esc to cancel")
 	c.Stdin = strings.NewReader(input.String())
 	c.Stderr = os.Stderr
 	out, err := c.Output()
@@ -144,7 +172,8 @@ func pickWithFzf(profiles []profile.Profile) (profile.Profile, bool, error) {
 		// Non-zero exit means the user aborted the picker (Esc/Ctrl-C).
 		return profile.Profile{}, false, fmt.Errorf("selection cancelled")
 	}
-	name := strings.SplitN(strings.TrimSpace(string(out)), "\t", 2)[0]
+	fields := strings.Split(strings.TrimRight(string(out), "\n"), "\t")
+	name := fields[len(fields)-1]
 	for _, p := range profiles {
 		if p.Name == name {
 			return p, true, nil
@@ -153,19 +182,52 @@ func pickWithFzf(profiles []profile.Profile) (profile.Profile, bool, error) {
 	return profile.Profile{}, false, fmt.Errorf("selection %q not found", name)
 }
 
+// pickWithPrompt is the no-fzf fallback: a numbered list that also accepts the
+// profile name, because typing "dev" is the first thing anyone tries.
 func pickWithPrompt(profiles []profile.Profile) (profile.Profile, error) {
-	fmt.Fprintln(os.Stderr, "Select a profile:")
+	s := ui.For(os.Stderr)
+	width := nameWidth(profiles)
+	fmt.Fprintf(os.Stderr, "\n  %s\n\n", s.Bold("Which profile?"))
 	for i, p := range profiles {
-		fmt.Fprintf(os.Stderr, "  %d) %s  (%s)\n", i+1, p.Name, dash(p.Region))
+		fmt.Fprintf(os.Stderr, "  %s  %s  %s\n",
+			s.Dim(fmt.Sprintf("%2d", i+1)), pad(p.Name, width), s.Dim(dash(p.Region)))
 	}
-	fmt.Fprint(os.Stderr, "> ")
+	fmt.Fprintf(os.Stderr, "\n  %s ", s.Cyan(ui.Arrow))
+
 	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
 	if err != nil {
 		return profile.Profile{}, fmt.Errorf("reading selection: %w", err)
 	}
-	n, err := strconv.Atoi(strings.TrimSpace(line))
-	if err != nil || n < 1 || n > len(profiles) {
-		return profile.Profile{}, fmt.Errorf("invalid selection %q", strings.TrimSpace(line))
+	fmt.Fprintln(os.Stderr)
+
+	choice := strings.TrimSpace(line)
+	if n, err := strconv.Atoi(choice); err == nil {
+		if n < 1 || n > len(profiles) {
+			return profile.Profile{}, fmt.Errorf("there is no profile %d — pick between 1 and %d", n, len(profiles))
+		}
+		return profiles[n-1], nil
 	}
-	return profiles[n-1], nil
+	for _, p := range profiles {
+		if strings.EqualFold(p.Name, choice) {
+			return p, nil
+		}
+	}
+	return profile.Profile{}, fmt.Errorf("no profile matches %q — pick a number, or a name from the list", choice)
+}
+
+func nameWidth(profiles []profile.Profile) int {
+	width := 0
+	for _, p := range profiles {
+		if len(p.Name) > width {
+			width = len(p.Name)
+		}
+	}
+	return width
+}
+
+func pad(s string, width int) string {
+	if len(s) >= width {
+		return s
+	}
+	return s + strings.Repeat(" ", width-len(s))
 }

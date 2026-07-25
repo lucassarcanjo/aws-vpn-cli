@@ -24,6 +24,7 @@ type Port interface {
 	VerifySignature(binPath, teamID string) error
 	SpawnOpenVPN(spec SpawnSpec) (pid int, err error)
 	OpenBrowser(url string) error
+	CopyToClipboard(text string) error
 	ApplyDNS(servers []string) (dns.Backup, error)
 	RevertDNS(b dns.Backup) error
 	Kill(pid int) error
@@ -82,6 +83,9 @@ func (r *Real) SpawnOpenVPN(spec SpawnSpec) (int, error) {
 
 // OpenBrowser opens the SSO URL as the invoking user.
 func (r *Real) OpenBrowser(url string) error { return r.User.OpenBrowser(url) }
+
+// CopyToClipboard puts text on the invoking user's pasteboard.
+func (r *Real) CopyToClipboard(text string) error { return r.User.CopyToClipboard(text) }
 
 // ApplyDNS sets the pushed resolver and returns the state to revert to.
 func (r *Real) ApplyDNS(servers []string) (dns.Backup, error) { return dns.Apply(servers) }

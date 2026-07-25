@@ -12,6 +12,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 // User is the real invoking user (the human behind a `sudo awsvpn …`), resolved
@@ -102,18 +103,36 @@ func (u User) OpenBrowser(rawURL string) error {
 	if err := validateBrowserURL(rawURL); err != nil {
 		return err
 	}
-	var cmd *exec.Cmd
-	if IsRoot() && os.Getenv("SUDO_USER") != "" && os.Getenv("SUDO_USER") != "root" {
-		// launchctl asuser <uid> sudo -u <name> open <url>
-		cmd = exec.Command("launchctl", "asuser", strconv.Itoa(u.UID),
-			"sudo", "-u", u.Name, "open", rawURL)
-	} else {
-		cmd = exec.Command("open", rawURL)
-	}
+	cmd := u.asUser("open", rawURL)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("opening browser: %w: %s", err, out)
 	}
 	return nil
+}
+
+// CopyToClipboard puts text on the invoking user's pasteboard, so they can paste
+// the sign-in link into the browser they are actually signed in to. Routed into
+// their GUI session for the same reason as OpenBrowser, and handed to `pbcopy`
+// over stdin rather than argv so it never appears in the process table.
+func (u User) CopyToClipboard(text string) error {
+	cmd := u.asUser("pbcopy")
+	cmd.Stdin = strings.NewReader(text)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("copying to the clipboard: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// asUser builds a command that runs in the invoking user's GUI session. Under
+// root we go through `launchctl asuser` so the action reaches their desktop
+// (their browser, their pasteboard) rather than root's non-existent session.
+func (u User) asUser(name string, args ...string) *exec.Cmd {
+	if IsRoot() && os.Getenv("SUDO_USER") != "" && os.Getenv("SUDO_USER") != "root" {
+		// launchctl asuser <uid> sudo -u <name> <cmd> <args...>
+		full := append([]string{"asuser", strconv.Itoa(u.UID), "sudo", "-u", u.Name, name}, args...)
+		return exec.Command("launchctl", full...)
+	}
+	return exec.Command(name, args...)
 }
 
 func validateBrowserURL(rawURL string) error {
