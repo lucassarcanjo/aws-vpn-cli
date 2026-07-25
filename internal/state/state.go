@@ -112,11 +112,17 @@ func ClearDNSBackup() error {
 // Alive reports whether the recorded openvpn process still exists. Note this is a
 // necessary but not sufficient signal — callers that will signal the process must
 // also confirm its identity (PID reuse), see daemon.teardown.
+//
+// The tunnel is root-owned but `status` runs unprivileged, so probing it from a
+// normal shell fails with EPERM rather than succeeding: the kernel checks
+// permission even for the null signal. EPERM only ever comes back when the
+// process is there to be denied, so it means alive just as surely as a nil error.
 func (r Run) Alive() bool {
 	if r.OvpnPID <= 0 {
 		return false
 	}
-	return syscall.Kill(r.OvpnPID, 0) == nil
+	err := syscall.Kill(r.OvpnPID, 0)
+	return err == nil || errors.Is(err, syscall.EPERM)
 }
 
 // Connecting reports a record written at spawn that has not yet reached CONNECTED.
