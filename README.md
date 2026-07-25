@@ -68,6 +68,14 @@ sudo awsvpn install-privilege   # opt-in NOPASSWD rule for automation
 merges them with imported profiles. It supports one active connection; a new
 connection replaces the current tunnel.
 
+While `connect` waits for single sign-on, press `Enter` to re-open the page or
+`c` then `Enter` to copy the link — useful when `open` hands it to a browser you
+aren't signed in with. `connect -v` streams the raw connection log instead of
+the progress summary.
+
+`list` and `status` take `--json` for scripts and agents. Colour follows the
+terminal and respects [`NO_COLOR`](https://no-color.org).
+
 ## Security
 
 - `awsvpn` verifies the AWS VPN binary immediately before it runs as root.

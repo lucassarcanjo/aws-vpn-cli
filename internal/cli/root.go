@@ -17,7 +17,7 @@ var verbose bool
 // Execute runs the root command.
 func Execute() {
 	if err := newRootCmd().Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
+		fail(err)
 		os.Exit(1)
 	}
 }

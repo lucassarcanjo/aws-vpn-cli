@@ -10,16 +10,18 @@ import (
 
 	"github.com/lucassarcanjo/aws-vpn-cli/internal/config"
 	"github.com/lucassarcanjo/aws-vpn-cli/internal/profile"
+	"github.com/lucassarcanjo/aws-vpn-cli/internal/ui"
 	"github.com/spf13/cobra"
 )
 
 func newImportCmd() *cobra.Command {
 	var name string
 	cmd := &cobra.Command{
-		Use:   "import <file.ovpn>",
-		Short: "Register a raw .ovpn config as a profile",
-		Long:  "Copy an OpenVPN config into awsvpn's own store so you can connect to an endpoint you haven't added to the AWS VPN Client.",
-		Args:  cobra.ExactArgs(1),
+		Use:     "import <file.ovpn>",
+		Short:   "Register a raw .ovpn config as a profile",
+		Long:    "Copy an OpenVPN config into awsvpn's own store so you can connect to an endpoint you haven't added to the AWS VPN Client.",
+		Example: "  awsvpn import ./client.ovpn\n  awsvpn import ./client.ovpn --name staging",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			u, err := mustUser()
 			if err != nil {
@@ -68,7 +70,9 @@ func newImportCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Printf("Imported %q (%s). Connect with: sudo awsvpn connect %s\n", p.Name, dash(p.Region), p.Name)
+			s := ui.For(os.Stdout)
+			ui.Done(os.Stdout, "Imported %s %s", s.Bold(p.Name), s.Dim("("+dash(p.Region)+")"))
+			ui.Hint(os.Stdout, "Connect with: sudo awsvpn connect %s", p.Name)
 			return nil
 		},
 	}

@@ -1,8 +1,6 @@
 package daemon
 
 import (
-	"fmt"
-
 	"github.com/lucassarcanjo/aws-vpn-cli/internal/logging"
 	"github.com/lucassarcanjo/aws-vpn-cli/internal/mgmt"
 	"github.com/lucassarcanjo/aws-vpn-cli/internal/state"
@@ -87,20 +85,4 @@ func Status(sys system.Port) (state.Run, bool, error) {
 	}
 	live := r.Alive() && sys.IsOpenVPN(r.OvpnPID)
 	return r, live, nil
-}
-
-// FormatStatus renders a human-readable status line.
-func FormatStatus(r state.Run, live bool) string {
-	if !live {
-		if r.Connecting() {
-			return fmt.Sprintf("connecting: %s (handshake in progress or interrupted)", r.Profile)
-		}
-		return fmt.Sprintf("stale: %s recorded but its process is gone (run `sudo awsvpn disconnect` to clean up)", r.Profile)
-	}
-	tunnel := "split-tunnel"
-	if r.FullTunnel {
-		tunnel = "full-tunnel"
-	}
-	return fmt.Sprintf("connected: %s\n  assigned IP: %s\n  endpoint:    %s:%s\n  DNS:         %v\n  mode:        %s\n  uptime:      %s",
-		r.Profile, r.AssignedIP, r.RemoteIP, r.Port, r.DNS, tunnel, r.Duration().Round(1e9))
 }

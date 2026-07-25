@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/lucassarcanjo/aws-vpn-cli/internal/privilege"
+	"github.com/lucassarcanjo/aws-vpn-cli/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -32,22 +33,27 @@ func newInstallPrivilegeCmd() *cobra.Command {
 				return fmt.Errorf("locating this binary: %w", err)
 			}
 
+			s := ui.For(os.Stdout)
 			rule := privilege.SudoersRule(u.Name, self)
-			fmt.Printf("This will write %s with:\n\n%s\n", privilege.SudoersPath, indent(rule))
-			fmt.Println("This grants passwordless sudo for THIS awsvpn binary only, for user " + u.Name + ".")
+			fmt.Printf("\nThis will write %s with:\n\n%s\n", s.Bold(privilege.SudoersPath), s.Dim(indent(rule)))
+			fmt.Println("It grants passwordless sudo for " + s.Bold("this awsvpn binary only") + ", for user " + s.Bold(u.Name) + ".")
 
 			if !yes {
-				fmt.Print("Proceed? Type 'yes' to confirm: ")
+				fmt.Printf("\n  %s Type 'yes' to confirm: ", s.Cyan(ui.Arrow))
 				line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
 				if strings.TrimSpace(line) != "yes" {
-					fmt.Println("Aborted. Nothing was written.")
+					fmt.Println()
+					ui.Warn(os.Stdout, "Aborted. Nothing was written.")
 					return nil
 				}
 			}
 			if err := privilege.InstallSudoers(rule); err != nil {
 				return err
 			}
-			fmt.Printf("Installed. You can now run `awsvpn connect …` without a password prompt.\n")
+			fmt.Println()
+			ui.Done(os.Stdout, "Installed the sudoers rule.")
+			ui.Hint(os.Stdout, "`awsvpn connect …` no longer needs a password prompt.")
+			ui.Hint(os.Stdout, "Remove it any time with: sudo rm %s", privilege.SudoersPath)
 			return nil
 		},
 	}
