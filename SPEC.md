@@ -23,7 +23,7 @@ The project is open source, source-first (you are meant to build it yourself), a
 3. As a developer, I want the tool to **auto-discover the profiles I already configured** in the official AWS VPN Client, so that I don't re-enter endpoint details I already have.
 4. As a developer, I want to **import a raw `.ovpn` file** (`awsvpn import ./client.ovpn`), so that I can use an endpoint I haven't added to the official app.
 5. As a developer, I want `awsvpn list` to show my available profiles (name, endpoint, region), so that I know what I can connect to.
-6. As a developer, I want `connect` to open my browser to the SSO page automatically, so that I can authenticate without copy-pasting a URL.
+6. As a developer, I want `connect` to open my browser to the SSO page automatically **and to keep that URL on screen while it waits**, so that I can authenticate without copy-pasting a URL — and can still re-open the page (press Enter, or paste the URL into the browser I'm actually signed in to) when it lands in the wrong browser or I close the tab, instead of restarting the connect.
 7. As a developer, I want a friendly "authentication received — you can close this tab" page after SSO, so that the browser step feels finished.
 8. As a developer, I want `connect` to **return control to my shell once the tunnel is up**, so that I can keep working (or let a script continue) without a blocked terminal.
 9. As an automation agent, I want a non-interactive, scriptable connect/disconnect lifecycle, so that I can bring the tunnel up, run tasks, and tear it down programmatically.

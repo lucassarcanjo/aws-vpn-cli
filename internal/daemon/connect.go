@@ -5,9 +5,11 @@
 package daemon
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"syscall"
 	"time"
 
@@ -133,6 +135,43 @@ func PrepareLog() (*os.File, error) {
 		os.O_CREATE|os.O_WRONLY|os.O_TRUNC|os.O_APPEND|syscall.O_NOFOLLOW, 0o644)
 }
 
+// printSSOPrompt puts the sign-in URL on the terminal so the user can open it
+// themselves — in the right browser, or again after closing the tab. Stderr, not
+// the logger: it's an instruction to the person watching, not a log record (the
+// URL goes to the log only under --verbose).
+func printSSOPrompt(url string, timeout time.Duration, interactive bool) {
+	var b strings.Builder
+	fmt.Fprintf(&b, "\n  Sign in at:\n    %s\n\n", url)
+	if interactive {
+		b.WriteString("  Opened the wrong browser, or closed the tab? Press Enter to open it again.\n")
+	}
+	fmt.Fprintf(&b, "  Waiting up to %s for sign-in to complete.\n\n", timeout)
+	fmt.Fprint(os.Stderr, b.String())
+}
+
+// watchRetryKey signals once per line typed on stdin, so the connect loop can
+// re-open the sign-in page on Enter. Returns nil when stdin isn't a terminal
+// (scripted or launchd-driven runs) — a nil channel simply never fires, and the
+// prompt then omits the offer. The reader goroutine lives until the process
+// exits; connect is short-lived, so there is nothing to unwind.
+func watchRetryKey() <-chan struct{} {
+	fi, err := os.Stdin.Stat()
+	if err != nil || fi.Mode()&os.ModeCharDevice == 0 {
+		return nil
+	}
+	ch := make(chan struct{}, 1)
+	go func() {
+		sc := bufio.NewScanner(os.Stdin)
+		for sc.Scan() {
+			select {
+			case ch <- struct{}{}:
+			default: // a retry is already pending; coalesce impatient Enters
+			}
+		}
+	}()
+	return ch
+}
+
 // drive is the event loop: it feeds management lines, the captured assertion, and
 // an overall deadline into the pure reducer and performs the effects it emits.
 func drive(o Options, client *mgmt.Client, pid int, sock string, cb *callback.Server) (state.Run, error) {
@@ -140,6 +179,11 @@ func drive(o Options, client *mgmt.Client, pid int, sock string, cb *callback.Se
 	lines := client.Lines()
 	var samlCh <-chan callback.Result
 	var dnsBackup dns.Backup
+
+	// Live only during the SSO window: the URL we handed the browser, and the
+	// keypress channel that re-opens it.
+	var ssoURL string
+	var retryCh <-chan struct{}
 
 	// Bound the WHOLE connect, not just the browser wait — otherwise a stall
 	// before the challenge or after the assertion would hang forever.
@@ -155,8 +199,18 @@ func drive(o Options, client *mgmt.Client, pid int, sock string, cb *callback.Se
 			}
 			o.Logger.Debug("<< %s", line)
 			ev = reducer.MgmtLine{Line: line}
+		case <-retryCh:
+			// The tab was closed, or `open` handed the URL to the wrong browser
+			// (or the wrong Chrome profile). Re-open it: the callback listener is
+			// still bound and the SSO window is still running, so this costs
+			// nothing and saves a full reconnect.
+			o.Logger.Info("re-opening the sign-in page")
+			if err := o.Sys.OpenBrowser(ssoURL); err != nil {
+				o.Logger.Info("could not open the browser automatically: %v", err)
+			}
+			continue // not an event; nothing for the reducer to step on
 		case res := <-samlCh:
-			samlCh = nil
+			samlCh, retryCh = nil, nil // signed in; re-opening would hit a closed listener
 			if res.Err != nil {
 				o.Logger.Info("SSO did not complete: %v", res.Err)
 				ev = reducer.Timeout{}
@@ -181,10 +235,17 @@ func drive(o Options, client *mgmt.Client, pid int, sock string, cb *callback.Se
 				}
 			case reducer.OpenBrowser:
 				o.Logger.Info("opening browser for single sign-on")
+				o.Logger.Debug("SSO URL: %s", eff.URL)
 				if err := o.Sys.OpenBrowser(eff.URL); err != nil {
 					o.Logger.Info("could not open the browser automatically: %v", err)
-					fmt.Fprintf(os.Stderr, "\nOpen this URL to authenticate:\n  %s\n\n", eff.URL)
 				}
+				// Whether or not the auto-open worked, keep the URL on screen for
+				// the whole window: `open` may hand it to a browser (or a Chrome
+				// profile) the user isn't signed in with, and once that tab is
+				// closed there is otherwise nothing to go back to.
+				ssoURL = eff.URL
+				retryCh = watchRetryKey()
+				printSSOPrompt(eff.URL, o.SSOTimeout, retryCh != nil)
 				cb.Serve(o.SSOTimeout)
 				samlCh = cb.Results()
 			case reducer.ApplyDNS:
