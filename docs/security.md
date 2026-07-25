@@ -93,8 +93,11 @@ back to you. The wrapper still has root access while it connects.
 ### `install-privilege` creates a standing grant
 
 The command prints the rule before writing it, validates the file with
-`visudo -c`, and limits the rule to one binary and user. A NOPASSWD rule remains
-persistent attack surface. Remove it with:
+`visudo -c`, and limits the rule to one binary and user. While the rule is
+installed, `connect` and `disconnect` re-execute themselves as root through
+`sudo -n` instead of refusing to run — they check for the rule file first and
+never elevate without it, so removing the file restores sudo-per-invocation. A
+NOPASSWD rule remains persistent attack surface. Remove it with:
 
 ```sh
 sudo rm /etc/sudoers.d/awsvpn

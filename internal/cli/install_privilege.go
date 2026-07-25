@@ -17,8 +17,10 @@ func newInstallPrivilegeCmd() *cobra.Command {
 		Use:   "install-privilege",
 		Short: "Install a narrow passwordless-sudo rule for non-interactive use",
 		Long: "Write a tightly-scoped sudoers rule so `awsvpn` can run without a password\n" +
-			"prompt — useful for agents and CI. The exact rule is printed first and, unless\n" +
-			"--yes is given, requires confirmation. Remove it any time with `sudo rm " + privilege.SudoersPath + "`.",
+			"prompt — useful for agents and CI. Once installed, `connect` and `disconnect`\n" +
+			"elevate themselves through it, so they no longer need a `sudo` prefix. The exact\n" +
+			"rule is printed first and, unless --yes is given, requires confirmation. Remove\n" +
+			"it any time with `sudo rm " + privilege.SudoersPath + "`.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := requireRoot("install-privilege"); err != nil {
@@ -52,7 +54,7 @@ func newInstallPrivilegeCmd() *cobra.Command {
 			}
 			fmt.Println()
 			ui.Done(os.Stdout, "Installed the sudoers rule.")
-			ui.Hint(os.Stdout, "`awsvpn connect …` no longer needs a password prompt.")
+			ui.Hint(os.Stdout, "`connect` and `disconnect` now elevate themselves: no `sudo` prefix, no prompt.")
 			ui.Hint(os.Stdout, "Remove it any time with: sudo rm %s", privilege.SudoersPath)
 			return nil
 		},

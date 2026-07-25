@@ -61,7 +61,8 @@ sudo awsvpn disconnect          # remove routes and restore DNS
 awsvpn logs -f                  # follow the connection log
 awsvpn import ./client.ovpn     # register a config outside the AWS client
 awsvpn version
-sudo awsvpn install-privilege   # opt-in NOPASSWD rule for automation
+sudo awsvpn install-privilege   # opt-in NOPASSWD rule; connect/disconnect then
+                                # elevate themselves, no `sudo` prefix needed
 ```
 
 `awsvpn` reads profiles from the AWS VPN Client without changing its store and

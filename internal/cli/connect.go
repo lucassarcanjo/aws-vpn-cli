@@ -32,7 +32,7 @@ func newConnectCmd() *cobra.Command {
 			"  sudo awsvpn connect dev -v   # stream the raw connection log",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := requireRoot("connect"); err != nil {
+			if err := ensureRoot("connect"); err != nil {
 				return err
 			}
 			u, err := mustUser()
