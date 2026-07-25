@@ -35,7 +35,7 @@ run unless you explicitly install a narrow passwordless-sudo rule.
    returns your shell. `disconnect` removes it.
 
 The connection reducer in `internal/reducer` is a pure state machine. Tests
-drive it with real management transcripts. Signature verification, socket I/O,
+drive it with captured management transcripts. Signature verification, socket I/O,
 browser launch, `scutil`, and daemonization sit behind a thin system port.
 
 ## Mitigated risks

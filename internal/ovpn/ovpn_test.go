@@ -6,9 +6,9 @@ import (
 	"testing"
 )
 
-// The CRV1 challenge line as delivered by the real dev endpoint. The state id
-// carries slashes, and the SAML URL carries colons and query characters — the
-// two things naive splitting gets wrong.
+// A CRV1 challenge line in the shape a live endpoint delivers, with synthetic
+// identifiers. The state id carries slashes, and the SAML URL carries colons and
+// query characters — the two things naive splitting gets wrong.
 const realChallengeLine = `>PASSWORD:Verification Failed: 'Auth' ['CRV1:R,E:instance-1/1234567890123456789/11111111-2222-3333-4444-555555555555:dXNlcg==:https://login.microsoftonline.com/00000000-0000-0000-0000-000000000000/saml2?SAMLRequest=jVJNTwIxEL3zKzZ7h%2B1i1GQCJKvESOIHgdWDF1OWEZq007XTFfXX2y6ikihxOulhOu%2FNe5MOWBpdQ9H4Nc3wuUH2nSR5NZoY2qdh2jgCK1kxkDTI4CuYF9dX0O8JqJ31trI63QMdxkhmdF5ZiqDJeJg%2Bin9GBNyj44AdpoGqJWBucELsJflQFP2TrshDlkJAmw%2Bxaxx8KZK%2BRa69rxmyTNuVop5RlbNsn7wlrQh7lTXZbmD3l2sXWXTaj%2BTTzyWcKVoqWh12v9g2MVyW5bQ7vZ2XkaLY7eTcEjcG3Rzdi6rwbna11Rvk5v3Tnggnh6NjIfJ0FHBJMogyoN2CG8XB0sh3S7DBBW85GCqtkPxLTYPsZ%2Fc3voabIHQynlqtqre2HuPCOiP9337yoCVW1LL71LYCGql0sVw6ZE6%2FeAqt7ebcofQ4TL1rME2yUaezVbP%2F%2BUYf']`
 
 func TestParseCRV1Challenge_Real(t *testing.T) {
@@ -43,7 +43,7 @@ func TestParseCRV1Challenge_Rejections(t *testing.T) {
 }
 
 func TestParsePushReply_RealSplitTunnel(t *testing.T) {
-	// The real split-tunnel PUSH_REPLY captured from the dev endpoint.
+	// A split-tunnel PUSH_REPLY in the shape a live endpoint pushes.
 	const line = `>LOG:1784222495,,PUSH: Received control message: 'PUSH_REPLY,dhcp-option DNS 10.0.0.2,route 10.0.0.0 255.255.0.0,route 172.16.8.0 255.255.248.0,route-gateway 10.8.0.129,topology subnet,ping 1,ping-restart 20,echo,echo,echo,ifconfig 10.8.0.133 255.255.255.224,peer-id 1,cipher AES-256-GCM,protocol-flags cc-exit tls-ekm dyn-tls-crypt,tun-mtu 1500'`
 	pr, ok := ParsePushReply(line)
 	if !ok {

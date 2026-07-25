@@ -2,7 +2,7 @@
 // the form step(state, event) -> (state, []effect). It holds every
 // credential- and handshake-bearing decision but performs no I/O, so the whole
 // SAML→CRV1 dance is deterministic and testable by feeding it a scripted event
-// sequence and asserting the emitted effects — including the real management
+// sequence and asserting the emitted effects — including a management
 // transcript captured from a live endpoint.
 //
 // The proven handshake it encodes (from the spike):

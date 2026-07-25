@@ -22,7 +22,7 @@ type PushReply struct {
 // ParsePushReply parses a PUSH_REPLY control message. It accepts either the bare
 // control message ("PUSH_REPLY,dhcp-option DNS 10.0.0.2,...") or a full
 // management log line that contains one; the payload may be wrapped in quotes.
-// Observed real shape (split-tunnel, single internal DNS):
+// Observed shape (split-tunnel, single internal DNS):
 //
 //	PUSH_REPLY,dhcp-option DNS 10.0.0.2,route 10.0.0.0 255.255.0.0,
 //	route 172.16.8.0 255.255.248.0,route-gateway 10.8.0.129,topology subnet,...

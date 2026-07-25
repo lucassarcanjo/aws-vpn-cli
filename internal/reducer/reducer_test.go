@@ -6,7 +6,8 @@ import (
 	"testing"
 )
 
-// The real management lines captured by the spike against the dev endpoint.
+// Management lines captured by the spike against a live endpoint. The shape is
+// verbatim; addresses, endpoint ids, and session ids are synthetic.
 const (
 	lineHold0   = `>HOLD:Waiting for hold release:0`
 	lineHold1   = `>HOLD:Waiting for hold release:1`

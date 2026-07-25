@@ -2,7 +2,7 @@
 // by AWS's acvc-openvpn: the CRV1/SAML challenge, PUSH_REPLY, and the handful of
 // real-time notifications the connection reducer reacts to. Everything here is a
 // pure function of its input string so it can be unit-tested against transcripts
-// captured from a real endpoint.
+// captured from a live endpoint.
 package ovpn
 
 import "strings"
