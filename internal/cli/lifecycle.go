@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/lucassarcanjo/aws-vpn-cli/internal/daemon"
+	"github.com/lucassarcanjo/aws-vpn-cli/internal/launchd"
 	"github.com/lucassarcanjo/aws-vpn-cli/internal/logging"
 	"github.com/lucassarcanjo/aws-vpn-cli/internal/system"
 	"github.com/spf13/cobra"
@@ -22,6 +23,11 @@ func newDisconnectCmd() *cobra.Command {
 			u, err := mustUser()
 			if err != nil {
 				return err
+			}
+			// Stop the supervisor first so it doesn't observe this deliberate
+			// teardown as a drop and fire a "connection lost" notification.
+			if err := launchd.Uninstall(); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: could not remove the connection supervisor: %v\n", err)
 			}
 			logger := logging.New(os.Stderr, logging.NewRedactor(), verbose)
 			profile, err := daemon.Disconnect(system.NewReal(u), logger)

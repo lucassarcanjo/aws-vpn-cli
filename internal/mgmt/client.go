@@ -21,8 +21,22 @@ type Client struct {
 
 // Dial connects to the unix-domain management socket, retrying until it appears
 // (acvc-openvpn creates it shortly after launch) or the deadline passes. On
-// success it enables the real-time notifications the reducer needs.
+// success it enables the real-time notifications the reducer needs: state changes
+// plus the log stream (PUSH_REPLY arrives as a log line). >HOLD and >PASSWORD
+// prompts are emitted without extra opt-in.
 func Dial(socketPath string, timeout time.Duration) (*Client, error) {
+	return dial(socketPath, timeout, "state on", "log on")
+}
+
+// DialWatch connects like Dial but enables only state notifications — used by the
+// connection supervisor, which classifies STATE/HOLD/PASSWORD lines and does not
+// want the log stream (whose replayed backlog would be noise, and could echo an
+// earlier handshake line).
+func DialWatch(socketPath string, timeout time.Duration) (*Client, error) {
+	return dial(socketPath, timeout, "state on")
+}
+
+func dial(socketPath string, timeout time.Duration, setup ...string) (*Client, error) {
 	deadline := time.Now().Add(timeout)
 	var conn net.Conn
 	var err error
@@ -45,15 +59,11 @@ func Dial(socketPath string, timeout time.Duration) (*Client, error) {
 	c := &Client{conn: conn, lines: make(chan string, 64)}
 	go c.read()
 
-	// Enable state notifications and the log stream (PUSH_REPLY arrives as a log
-	// line). >HOLD and >PASSWORD prompts are emitted without extra opt-in.
-	if err := c.Send("state on"); err != nil {
-		c.Close()
-		return nil, err
-	}
-	if err := c.Send("log on"); err != nil {
-		c.Close()
-		return nil, err
+	for _, cmd := range setup {
+		if err := c.Send(cmd); err != nil {
+			c.Close()
+			return nil, err
+		}
 	}
 	return c, nil
 }

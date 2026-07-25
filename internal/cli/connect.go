@@ -9,7 +9,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/lucassarcanjo/aws-vpn-cli/internal/config"
 	"github.com/lucassarcanjo/aws-vpn-cli/internal/daemon"
+	"github.com/lucassarcanjo/aws-vpn-cli/internal/launchd"
 	"github.com/lucassarcanjo/aws-vpn-cli/internal/logging"
 	"github.com/lucassarcanjo/aws-vpn-cli/internal/profile"
 	"github.com/lucassarcanjo/aws-vpn-cli/internal/system"
@@ -57,6 +59,15 @@ func newConnectCmd() *cobra.Command {
 			out := io.MultiWriter(logFile, os.Stderr)
 			logger := logging.New(out, red, verbose)
 
+			// Boot out any supervisor from a prior connection BEFORE connecting.
+			// daemon.Connect tears down an existing tunnel as part of the swap; if
+			// its supervisor were still watching, it would see that teardown as a
+			// drop and revert DNS / clear state — racing (and clobbering) the tunnel
+			// we're about to bring up. Its SIGTERM handler exits cleanly, no teardown.
+			if err := launchd.Uninstall(); err != nil {
+				logger.Info("warning: could not clear a previous connection supervisor: %v", err)
+			}
+
 			run, err := daemon.Connect(daemon.Options{
 				Profile:         prof,
 				Sys:             system.NewReal(u),
@@ -70,6 +81,22 @@ func newConnectCmd() *cobra.Command {
 
 			fmt.Printf("\nConnected to %s (%s). Your shell is free — the tunnel runs in the background.\n",
 				run.Profile, run.AssignedIP)
+
+			// Register the connection supervisor: a root LaunchDaemon that watches
+			// the tunnel and, if it drops and can't self-heal, tears it down
+			// cleanly (restoring DNS/routes) and notifies — so a sleep/outage never
+			// leaves the machine blackholed behind a dead tunnel. Non-fatal: the
+			// tunnel is up regardless; we just warn if auto-recovery is unavailable.
+			if self, exeErr := os.Executable(); exeErr != nil {
+				logger.Info("warning: could not locate this binary to start the supervisor: %v", exeErr)
+			} else if err := launchd.Install(launchd.Spec{
+				Exe: self, UID: u.UID, Profile: run.Profile, LogPath: config.LogPath(),
+			}); err != nil {
+				logger.Info("warning: connection supervisor not started (auto-recovery on drop disabled): %v", err)
+			} else {
+				fmt.Println("If the connection drops, it will be torn down automatically and you'll be notified.")
+			}
+
 			fmt.Println("Check it with `awsvpn status`; tear it down with `sudo awsvpn disconnect`.")
 			return nil
 		},
