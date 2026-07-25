@@ -1,3 +1,8 @@
 /bin/
 *.out
 .DS_Store
+
+# Agent worktrees and per-machine agent settings. Shared config under .claude
+# (settings.json, skills) stays trackable.
+/.claude/worktrees/
+/.claude/settings.local.json
