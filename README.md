@@ -56,7 +56,7 @@ make install
 awsvpn list                     # profiles from AWS VPN Client + imports
 sudo awsvpn connect dev         # connect by name
 sudo awsvpn connect             # choose a profile
-awsvpn status                   # profile, assigned IP, uptime
+awsvpn status                   # state, IP, endpoint, DNS, tunnel mode, uptime
 sudo awsvpn disconnect          # remove routes and restore DNS
 awsvpn logs -f                  # follow the connection log
 awsvpn import ./client.ovpn     # register a config outside the AWS client
@@ -75,8 +75,27 @@ While `connect` waits for single sign-on, press `Enter` to re-open the page or
 aren't signed in with. `connect -v` streams the raw connection log instead of
 the progress summary.
 
-`list` and `status` take `--json` for scripts and agents. Colour follows the
+`list` and `status` take `--json` for scripts and agents. `status` reports
+`connected`, `connecting`, `stale`, or `disconnected`. Colour follows the
 terminal and respects [`NO_COLOR`](https://no-color.org).
+
+Other flags: `import --name` sets the profile name, `install-privilege --yes`
+skips the confirmation prompt, and `connect --allow-unverified-binary` skips the
+signature check — only for a signing-identity change you have verified yourself.
+
+## If the tunnel drops
+
+A successful `connect` registers a supervisor: a root LaunchDaemon that watches
+the tunnel's management channel for the rest of the session. If the connection
+drops and cannot come back on its own within a minute — or comes back needing a
+fresh browser sign-in, which no background daemon should attempt — the
+supervisor tears the tunnel down, restores your DNS and routes, and posts a
+desktop notification. A laptop that sleeps through an outage wakes up with
+working networking rather than traffic pointed into a dead tunnel.
+
+The supervisor exists only while a connection does: `disconnect` (and the next
+`connect`) removes it. If it cannot be started, `connect` says so and the tunnel
+still comes up — you just clean up by hand.
 
 ## Security
 
@@ -85,8 +104,10 @@ terminal and respects [`NO_COLOR`](https://no-color.org).
   and aborts if another process already owns the port.
 - Root-owned runtime state lives in `/var/run/awsvpn`; imported profiles remain
   in your home directory.
-- The fixed AWS callback port, running the wrapper as root, and a passwordless
-  sudo rule each carry residual risk.
+- Nothing of `awsvpn` runs as root between connections: the drop supervisor is
+  registered on connect and removed on disconnect.
+- The fixed AWS callback port, running the wrapper as root, the root supervisor
+  while connected, and a passwordless sudo rule each carry residual risk.
 
 See the [full threat model and connection flow](docs/security.md).
 

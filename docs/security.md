@@ -28,8 +28,11 @@ run unless you explicitly install a narrow passwordless-sudo rule.
    one callback.
 4. `awsvpn` sends the assertion through the management socket to complete the
    CRV1 handshake.
-5. After OpenVPN connects, `awsvpn` applies pushed DNS through `scutil` and
-   records state so it can restore DNS after a disconnect or crash.
+5. After OpenVPN connects, `awsvpn` applies pushed DNS through `scutil` — to the
+   primary service's `State:` and `Setup:` resolver keys — and records the prior
+   state so it can restore DNS after a disconnect or crash.
+6. `awsvpn` registers the connection supervisor as a root LaunchDaemon, then
+   returns your shell. `disconnect` removes it.
 
 The connection reducer in `internal/reducer` is a pure state machine. Tests
 drive it with real management transcripts. Signature verification, socket I/O,
@@ -58,9 +61,28 @@ in use, the connection stops. The callback accepts one request and times out.
 
 ### DNS left behind after a crash
 
-When `awsvpn` applies DNS, it records the current resolver state. On the next
-run it restores DNS if a previous connection did not clean up. It preserves the
-resolver's servers, search domains, and domain name.
+When `awsvpn` applies DNS, it records the current resolver state — both the
+`State:` and `Setup:` dictionaries, in full. On the next run it restores DNS if
+a previous connection did not clean up. It preserves each key's servers, search
+domains, and domain name, and rolls back a half-applied override. Both writes go
+to the dynamic store, so a reboot clears them regardless.
+
+`awsvpn` writes the override to `Setup:` as well as `State:` because `State:`
+alone is owned by configd, which rewrites it from DHCP and IPv6-RA data on any
+network event. On a network whose router advertises RDNSS, a `State:`-only
+override was reverted within minutes and queries silently went back to the LAN
+resolver mid-session — split-horizon names then resolved to public addresses.
+
+### A dead tunnel left in place
+
+If the tunnel drops, its routes and DNS override outlive it, and traffic for
+internal names goes nowhere. The connection supervisor watches the management
+channel for the rest of the session and tears the tunnel down cleanly — routes,
+DNS, state — when it drops and does not recover within a 60-second grace window.
+It gives up immediately on anything that would need re-authentication: with AWS
+SAML, recovery means a fresh browser sign-in, which a root background daemon
+must never attempt on your behalf. It never releases OpenVPN's management hold
+and never handles a credential itself.
 
 ### Root writing through a planted symlink
 
@@ -110,6 +132,26 @@ active tunnel alone.
 Install `awsvpn` in a root-owned location that your user cannot write before you
 enable this option.
 
+### The supervisor is a root LaunchDaemon
+
+While a tunnel is up, `awsvpn` runs a second copy of itself as root under
+launchd: `awsvpn supervise`, defined by a plist at
+`/Library/LaunchDaemons/com.github.lucassarcanjo.awsvpn.supervisor.plist`. That
+directory is root-owned, so a non-root user cannot plant or edit the definition
+launchd will run as root. The job is registered by `connect` and booted out by
+`disconnect` and by the next `connect`, so no `awsvpn` process holds root
+between connections. It watches one socket and takes one action — teardown — and
+it neither reads nor requests a credential.
+
+To notify you, the supervisor reaches your GUI session through
+`launchctl asuser <uid> osascript`, because a sessionless root daemon cannot
+post a banner itself. The profile name reaches AppleScript as a quoted string
+literal with backslashes, quotes, and control characters escaped, so a profile
+name from the AWS store cannot break out and inject script. Notification is
+best-effort: with no logged-in session there is nothing to reach, and the
+teardown happens either way. You can review the plist while connected, and audit
+the job's activity in `awsvpn logs` — the supervisor writes there.
+
 ### A writable parent directory can race signature verification
 
 `awsvpn` verifies `acvc-openvpn` immediately before execution and requires a
@@ -125,9 +167,11 @@ tunnel connects. If you switch from Wi-Fi to Ethernet during a session, internal
 names can stop resolving until you reconnect. Disconnect still restores the
 original DNS configuration.
 
-Version 1 supports the dynamic `State:` resolver and IPv4 `dhcp-option DNS`.
-It does not support manually configured `Setup:` resolvers, IPv6 `DNS6`, or
-split DNS.
+Version 1 handles IPv4 `dhcp-option DNS` and overrides the primary service's
+`State:` and `Setup:` resolvers for the duration of the tunnel. A resolver you
+configured by hand in System Settings is captured and restored on disconnect,
+but it is overridden while connected. IPv6 `DNS6` and split DNS are not
+supported.
 
 ### OpenVPN's log redaction
 
