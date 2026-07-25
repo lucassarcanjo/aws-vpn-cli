@@ -1,0 +1,37 @@
+# The management transcript captured by the spike against a live endpoint. The
+# SHAPE of every line is verbatim; the addresses, endpoint ids and session ids
+# are synthetic — this repo is public, so nothing here may be real. Keep it that
+# way when adding lines.
+#
+# Shared by internal/reducer, internal/mgmt and internal/daemon tests so the
+# captured handshake has exactly one source of truth: if a line here is wrong,
+# every suite that depends on the contract is wrong together rather than half of
+# them silently disagreeing — and there is one place to sanitise.
+#
+# Format: <name><space><line>. Names never contain a space; management lines
+# never start with one, so the first space is an unambiguous separator.
+
+hold0 >HOLD:Waiting for hold release:0
+hold1 >HOLD:Waiting for hold release:1
+need >PASSWORD:Need 'Auth' username/password
+reconn >STATE:1784222488,RECONNECTING,auth-failure,,,,,
+wait >STATE:1784222494,WAIT,,,,,,
+connect >STATE:1784222495,CONNECTED,SUCCESS,10.8.0.133,203.0.113.10,443,,
+pushReply >LOG:1784222495,,PUSH: Received control message: 'PUSH_REPLY,dhcp-option DNS 10.0.0.2,route 10.0.0.0 255.255.0.0,route 172.16.8.0 255.255.248.0,route-gateway 10.8.0.129,topology subnet,ping 1,ping-restart 20,echo,echo,echo,ifconfig 10.8.0.133 255.255.255.224,peer-id 1,cipher AES-256-GCM,protocol-flags cc-exit tls-ekm dyn-tls-crypt,tun-mtu 1500'
+authFailed >LOG:1784222494,,AUTH: Received control message: AUTH_FAILED
+
+# The CRV1 challenge, and the same challenge as OpenVPN logs it on receipt. With
+# `log on` the >LOG: variant reaches the reducer BEFORE the >PASSWORD: one and
+# must not read as fatal.
+challenge >PASSWORD:Verification Failed: 'Auth' ['CRV1:R,E:instance-1/1234567890123456789/11111111-2222-3333-4444-555555555555:dXNlcg==:https://login.microsoftonline.com/tenant/saml2?SAMLRequest=fZJRb9s']
+challengeLog >LOG:1784305245,N,AUTH: Received control message: AUTH_FAILED,CRV1:R:instance-1/1234567890123456789/11111111-2222-3333-4444-555555555555:b'Ti9B':https://login.microsoftonline.com/tenant/saml2?SAMLRequest=fZJRb9s
+
+# Atoms the challenge line is built from. Tests assert that these really do occur
+# inside `challenge`, so the redundancy cannot drift.
+realState instance-1/1234567890123456789/11111111-2222-3333-4444-555555555555
+samlURL https://login.microsoftonline.com/tenant/saml2?SAMLRequest=fZJRb9s
+
+# A stand-in assertion carrying +, / and = so url-encoding is exercised. The real
+# one is ~10KB; tests that care about size inflate this one rather than checking
+# a 10KB blob into the tree.
+rawSAML PHNhbWxwOlJlc3BvbnNlPmZvbytiYXIvYmF6PT0mc2lnPXh4eA==

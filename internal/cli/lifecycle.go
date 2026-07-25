@@ -6,6 +6,7 @@ import (
 	"github.com/lucassarcanjo/aws-vpn-cli/internal/daemon"
 	"github.com/lucassarcanjo/aws-vpn-cli/internal/launchd"
 	"github.com/lucassarcanjo/aws-vpn-cli/internal/logging"
+	"github.com/lucassarcanjo/aws-vpn-cli/internal/state"
 	"github.com/lucassarcanjo/aws-vpn-cli/internal/system"
 	"github.com/lucassarcanjo/aws-vpn-cli/internal/ui"
 	"github.com/spf13/cobra"
@@ -30,7 +31,7 @@ func newDisconnectCmd() *cobra.Command {
 				ui.Warn(os.Stderr, "could not remove the connection supervisor: %v", err)
 			}
 			logger := logging.New(os.Stderr, logging.NewRedactor(), verbose)
-			profile, err := daemon.Disconnect(system.NewReal(u), logger)
+			profile, err := daemon.Disconnect(system.NewReal(u), state.Default(), logger)
 			if err != nil {
 				return err
 			}
@@ -58,7 +59,7 @@ func newStatusCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			run, live, err := daemon.Status(system.NewReal(u))
+			run, live, err := daemon.Status(system.NewReal(u), state.Default())
 			if err != nil {
 				return err
 			}
