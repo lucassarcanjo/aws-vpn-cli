@@ -1,6 +1,7 @@
 package privilege
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -17,7 +18,7 @@ const SudoersPath = "/etc/sudoers.d/awsvpn"
 func SudoersRule(username, binPath string) string {
 	return fmt.Sprintf("# Installed by `awsvpn install-privilege`.\n"+
 		"# Lets %s run this exact binary as root without a password prompt.\n"+
-		"# Remove this file to revoke:  sudo rm %s\n"+
+		"# Revoke with `awsvpn uninstall-privilege`, or by removing this file:  sudo rm %s\n"+
 		"%s ALL=(root) NOPASSWD: %s\n",
 		username, SudoersPath, username, binPath)
 }
@@ -54,4 +55,21 @@ func InstallSudoers(rule string) error {
 		return err
 	}
 	return os.Chown(SudoersPath, 0, 0)
+}
+
+// RemoveSudoers deletes the rule, revoking the standing grant. It reports
+// whether there was anything to delete, so the caller can tell "revoked" from
+// "there was nothing here". An already-absent rule is the desired end state, not
+// an error. Must be run as root.
+func RemoveSudoers() (bool, error) {
+	if !IsRoot() {
+		return false, fmt.Errorf("uninstall-privilege must be run as root (try: sudo awsvpn uninstall-privilege)")
+	}
+	if err := os.Remove(SudoersPath); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, fmt.Errorf("removing %s: %w", SudoersPath, err)
+	}
+	return true, nil
 }

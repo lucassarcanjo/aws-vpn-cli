@@ -17,7 +17,7 @@ func newDisconnectCmd() *cobra.Command {
 		Short: "Tear down the active tunnel and restore DNS",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if err := ensureRoot("disconnect"); err != nil {
+			if err := ensureRoot("disconnect", "to manage the tunnel"); err != nil {
 				return err
 			}
 			u, err := mustUser()

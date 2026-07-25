@@ -31,7 +31,7 @@ func newSuperviseCmd() *cobra.Command {
 		Hidden: true,
 		Args:   cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if err := requireRoot("supervise"); err != nil {
+			if err := requireRoot("supervise", "to watch the tunnel"); err != nil {
 				return err
 			}
 			return runSupervise(uid, profileFlag)

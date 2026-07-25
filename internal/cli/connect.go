@@ -13,6 +13,7 @@ import (
 	"github.com/lucassarcanjo/aws-vpn-cli/internal/daemon"
 	"github.com/lucassarcanjo/aws-vpn-cli/internal/launchd"
 	"github.com/lucassarcanjo/aws-vpn-cli/internal/logging"
+	"github.com/lucassarcanjo/aws-vpn-cli/internal/privilege"
 	"github.com/lucassarcanjo/aws-vpn-cli/internal/profile"
 	"github.com/lucassarcanjo/aws-vpn-cli/internal/system"
 	"github.com/lucassarcanjo/aws-vpn-cli/internal/ui"
@@ -32,7 +33,7 @@ func newConnectCmd() *cobra.Command {
 			"  sudo awsvpn connect dev -v   # stream the raw connection log",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := ensureRoot("connect"); err != nil {
+			if err := ensureRoot("connect", "to manage the tunnel"); err != nil {
 				return err
 			}
 			u, err := mustUser()
@@ -117,12 +118,24 @@ func newConnectCmd() *cobra.Command {
 
 			report.Stop()
 			printConnected(os.Stdout, run, supervised)
+			suggestGrant(os.Stdout)
 			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&allowUnverified, "allow-unverified-binary", false,
 		"skip the acvc-openvpn signature check (only for a legitimate AWS signing-identity change)")
 	return cmd
+}
+
+// suggestGrant points at the one-time opt-in at the only moment it really
+// lands: just after the user has typed `sudo` to get here. It stays quiet once
+// the grant exists, which keeps it a nudge rather than a nag.
+func suggestGrant(w io.Writer) {
+	if privilege.GrantInstalled() {
+		return
+	}
+	fmt.Fprintln(w)
+	ui.Hint(w, "Skip the `sudo` prefix next time: sudo awsvpn install-privilege")
 }
 
 // pickProfile lets the user choose interactively: fzf if present, else a numbered

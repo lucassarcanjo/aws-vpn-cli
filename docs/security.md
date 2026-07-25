@@ -97,11 +97,15 @@ The command prints the rule before writing it, validates the file with
 installed, `connect` and `disconnect` re-execute themselves as root through
 `sudo -n` instead of refusing to run — they check for the rule file first and
 never elevate without it, so removing the file restores sudo-per-invocation. A
-NOPASSWD rule remains persistent attack surface. Remove it with:
+NOPASSWD rule remains persistent attack surface. Revoke it with:
 
 ```sh
-sudo rm /etc/sudoers.d/awsvpn
+awsvpn uninstall-privilege   # or: sudo rm /etc/sudoers.d/awsvpn
 ```
+
+`uninstall-privilege` elevates through the grant it is deleting, so it needs no
+`sudo` prefix while the rule is in place; it only removes the file, and leaves an
+active tunnel alone.
 
 Install `awsvpn` in a root-owned location that your user cannot write before you
 enable this option.
