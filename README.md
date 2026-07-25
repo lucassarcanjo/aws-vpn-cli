@@ -1,3 +1,9 @@
+<p align="center">
+  <img src="docs/banner.png"
+       alt="awsvpn — AWS Client VPN from your terminal. A terminal running sudo awsvpn connect dev reports a tunnel established through SAML/SSO to an AWS Client VPN endpoint."
+       width="900">
+</p>
+
 # awsvpn
 
 Connect to a SAML/SSO AWS Client VPN endpoint from your macOS terminal.
@@ -123,3 +129,7 @@ make build
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+`awsvpn` is an independent project. It is not affiliated with, endorsed by, or
+sponsored by Amazon Web Services or Apple. AWS, the AWS logo, and macOS are
+trademarks of their respective owners.
