@@ -10,6 +10,7 @@ import (
 
 	"github.com/lucassarcanjo/aws-vpn-cli/internal/daemon"
 	"github.com/lucassarcanjo/aws-vpn-cli/internal/profile"
+	"github.com/lucassarcanjo/aws-vpn-cli/internal/state"
 	"github.com/lucassarcanjo/aws-vpn-cli/internal/system"
 	"github.com/lucassarcanjo/aws-vpn-cli/internal/ui"
 	"github.com/spf13/cobra"
@@ -35,7 +36,7 @@ func newListCmd() *cobra.Command {
 			// Best-effort: knowing which profile is live turns a list into an
 			// answer to "where am I?", but not knowing must never fail the list.
 			active := ""
-			if run, live, err := daemon.Status(system.NewReal(u)); err == nil && live {
+			if run, live, err := daemon.Status(system.NewReal(u), state.Default()); err == nil && live {
 				active = run.Profile
 			}
 

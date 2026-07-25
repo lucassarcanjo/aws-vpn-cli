@@ -4,28 +4,48 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/lucassarcanjo/aws-vpn-cli/internal/fixture"
 )
 
 // Management lines captured by the spike against a live endpoint. The shape is
-// verbatim; addresses, endpoint ids, and session ids are synthetic.
-const (
-	lineHold0   = `>HOLD:Waiting for hold release:0`
-	lineHold1   = `>HOLD:Waiting for hold release:1`
-	lineNeed    = `>PASSWORD:Need 'Auth' username/password`
-	lineReconn  = `>STATE:1784222488,RECONNECTING,auth-failure,,,,,`
-	lineWait    = `>STATE:1784222494,WAIT,,,,,,`
-	lineConnect = `>STATE:1784222495,CONNECTED,SUCCESS,10.8.0.133,203.0.113.10,443,,`
+// verbatim; addresses, endpoint ids, and session ids are synthetic. They live in
+// internal/fixture so the mgmt and daemon suites drive the same transcript —
+// one source of truth for the handshake contract, and one place to sanitise.
+var (
+	fx = fixture.Handshake()
 
-	linePushReply = `>LOG:1784222495,,PUSH: Received control message: 'PUSH_REPLY,dhcp-option DNS 10.0.0.2,route 10.0.0.0 255.255.0.0,route 172.16.8.0 255.255.248.0,route-gateway 10.8.0.129,topology subnet,ping 1,ping-restart 20,echo,echo,echo,ifconfig 10.8.0.133 255.255.255.224,peer-id 1,cipher AES-256-GCM,protocol-flags cc-exit tls-ekm dyn-tls-crypt,tun-mtu 1500'`
+	lineHold0        = fx.Line("hold0")
+	lineHold1        = fx.Line("hold1")
+	lineNeed         = fx.Line("need")
+	lineReconn       = fx.Line("reconn")
+	lineWait         = fx.Line("wait")
+	lineConnect      = fx.Line("connect")
+	linePushReply    = fx.Line("pushReply")
+	lineAuthFailed   = fx.Line("authFailed")
+	lineChallenge    = fx.Line("challenge")
+	lineChallengeLog = fx.Line("challengeLog")
 
-	realState     = "instance-1/1234567890123456789/11111111-2222-3333-4444-555555555555"
-	lineChallenge = `>PASSWORD:Verification Failed: 'Auth' ['CRV1:R,E:` + realState + `:dXNlcg==:https://login.microsoftonline.com/tenant/saml2?SAMLRequest=fZJRb9s']`
-	// The same challenge as OpenVPN logs it on receipt — with `log on` this >LOG:
-	// line reaches the reducer BEFORE lineChallenge and must not read as fatal.
-	lineChallengeLog = `>LOG:1784305245,N,AUTH: Received control message: AUTH_FAILED,CRV1:R:` + realState + `:b'Ti9B':https://login.microsoftonline.com/tenant/saml2?SAMLRequest=fZJRb9s`
-	samlURL          = "https://login.microsoftonline.com/tenant/saml2?SAMLRequest=fZJRb9s"
-	rawSAMLAssertion = "PHNhbWxwOlJlc3BvbnNlPmZvbytiYXIvYmF6PT0mc2lnPXh4eA==" // has +, /, = to exercise url-encoding
+	realState        = fx.Line("realState")
+	samlURL          = fx.Line("samlURL")
+	rawSAMLAssertion = fx.Line("rawSAML")
 )
+
+// TestFixtureAtomsAreConsistent guards the one redundancy in handshake.txt: the
+// challenge line is stored whole, and its state id and SAML URL are also stored
+// separately for assertions. If they ever drift apart, every assertion built on
+// the atoms would be testing something the reducer never saw.
+func TestFixtureAtomsAreConsistent(t *testing.T) {
+	if !strings.Contains(lineChallenge, realState) {
+		t.Errorf("challenge line does not contain realState %q", realState)
+	}
+	if !strings.Contains(lineChallenge, samlURL) {
+		t.Errorf("challenge line does not contain samlURL %q", samlURL)
+	}
+	if !strings.Contains(lineChallengeLog, realState) {
+		t.Errorf("challenge log line does not contain realState %q", realState)
+	}
+}
 
 // runner threads events through Step and accumulates every emitted effect.
 type runner struct {
@@ -254,7 +274,7 @@ func TestHardAuthFailure(t *testing.T) {
 	r := newRunner()
 	r.line(lineHold0).
 		line(lineNeed).
-		line(`>LOG:1784222494,,AUTH: Received control message: AUTH_FAILED`)
+		line(lineAuthFailed)
 
 	if r.state.Phase() != PhaseFailed {
 		t.Fatalf("phase = %v, want Failed", r.state.Phase())

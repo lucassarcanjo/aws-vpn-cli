@@ -43,6 +43,56 @@ type Options struct {
 	AllowUnverified bool
 	SSOTimeout      time.Duration
 	ConnectTimeout  time.Duration // overall deadline; defaults to SSOTimeout + slack
+
+	// The three paths below exist so tests can drive Connect against a temp dir,
+	// a temp socket, and an ephemeral port. Every one of them is EMPTY in
+	// production, where the config constants apply.
+	//
+	// SECURITY — do not set these outside tests:
+	//
+	//   StateRoot must be root-owned. A user-writable directory that root writes
+	//   into is a symlink-clobber privilege-escalation vector; that is the whole
+	//   reason config.RuntimeDir lives under /var/run (see internal/config).
+	//
+	//   MgmtSocketPath lives in that same root-owned dir. The management channel
+	//   accepts commands that control a root process, so a socket anywhere a
+	//   non-root user could pre-create it is a hand-over of the tunnel.
+	//
+	//   CallbackAddr must stay the fixed loopback :35001. Binding it before the
+	//   browser opens — and aborting if it is taken — is the only thing stopping
+	//   the SAML assertion being handed to another process (SPEC.md story 19).
+	//   A different port would silently disable that guard.
+	//
+	// Audit — every hit must be in a _test.go file:
+	//
+	//	grep -rn --include='*.go' -e 'StateRoot:' -e 'MgmtSocketPath:' \
+	//	    -e 'CallbackAddr:' . | grep -v _test.go | grep -vE ':[[:space:]]*//'
+	StateRoot      string
+	MgmtSocketPath string
+	CallbackAddr   string
+}
+
+// store is the state store this connect writes through: the root-owned default
+// unless a test pointed StateRoot elsewhere.
+func (o Options) store() *state.Store {
+	if o.StateRoot == "" {
+		return state.Default()
+	}
+	return state.At(o.StateRoot)
+}
+
+func (o Options) mgmtSocket() string {
+	if o.MgmtSocketPath == "" {
+		return config.MgmtSocketPath()
+	}
+	return o.MgmtSocketPath
+}
+
+func (o Options) callbackAddr() string {
+	if o.CallbackAddr == "" {
+		return config.CallbackAddr()
+	}
+	return o.CallbackAddr
 }
 
 // Connect brings up the tunnel and returns once it reaches CONNECTED, leaving
@@ -57,14 +107,15 @@ func Connect(o Options) (state.Run, error) {
 	if o.UI == nil {
 		o.UI = ui.Discard()
 	}
+	st := o.store()
 
 	// A prior connection that already died leaves DNS pointed at an unreachable
 	// resolver; clean that up first. A genuinely live one is swapped.
-	CleanupStale(o.Sys, o.Logger)
-	if r, ok, _ := state.Load(); ok && r.Alive() && o.Sys.IsOpenVPN(r.OvpnPID) {
+	CleanupStale(o.Sys, st, o.Logger)
+	if r, ok, _ := st.Run(); ok && r.Alive() && o.Sys.IsOpenVPN(r.OvpnPID) {
 		o.UI.Step("Stopping the tunnel to %s", r.Profile)
 		o.Logger.Info("swapping active tunnel (%s → %s)", r.Profile, o.Profile.Name)
-		if err := teardown(o.Sys, r, o.Logger); err != nil {
+		if err := teardown(o.Sys, st, r, o.Logger); err != nil {
 			o.Logger.Info("warning: could not cleanly stop the previous tunnel: %v", err)
 			o.UI.Warn("could not cleanly stop the tunnel to %s: %v", r.Profile, err)
 		} else {
@@ -74,13 +125,13 @@ func Connect(o Options) (state.Run, error) {
 
 	// Bind the SAML callback BEFORE anything else. If :35001 is taken we abort
 	// rather than risk handing the assertion to whatever holds it.
-	cb, err := callback.Listen(config.CallbackAddr())
+	cb, err := callback.Listen(o.callbackAddr())
 	if err != nil {
 		return state.Run{}, err
 	}
 	defer cb.Close()
 
-	sock := config.MgmtSocketPath()
+	sock := o.mgmtSocket()
 	_ = os.Remove(sock) // clear any stale socket
 
 	// Verify the AWS signature as the last thing before we exec the binary as
@@ -111,7 +162,7 @@ func Connect(o Options) (state.Run, error) {
 
 	// Record the PID/socket immediately so that if this wrapper is killed before
 	// CONNECTED, the next run can find and tear down the orphaned tunnel.
-	_ = state.Save(state.Run{
+	_ = st.SaveRun(state.Run{
 		Profile:    o.Profile.Name,
 		OvpnPID:    pid,
 		MgmtSocket: sock,
@@ -121,20 +172,20 @@ func Connect(o Options) (state.Run, error) {
 	client, err := mgmt.Dial(sock, 10*time.Second)
 	if err != nil {
 		_ = o.Sys.Kill(pid)
-		_ = state.Clear()
+		_ = st.ClearRun()
 		return state.Run{}, err
 	}
 	defer client.Close()
 	o.UI.OK("VPN engine running (pid %d)", pid)
 
-	run, err := drive(o, client, pid, sock, cb)
+	run, err := drive(o, st, client, pid, sock, cb)
 	if err != nil {
 		_ = o.Sys.Kill(pid)
-		revertDNS(o.Sys, o.Logger)
-		_ = state.Clear()
+		revertDNS(o.Sys, st, o.Logger)
+		_ = st.ClearRun()
 		return state.Run{}, err
 	}
-	if err := state.Save(run); err != nil {
+	if err := st.SaveRun(run); err != nil {
 		return state.Run{}, fmt.Errorf("recording connection state: %w", err)
 	}
 	return run, nil
@@ -144,7 +195,7 @@ func Connect(o Options) (state.Run, error) {
 // — the dir is root-owned) refuses a planted symlink; O_APPEND makes the parent
 // logger's and openvpn's writes to the shared fd atomic rather than interleaved.
 func PrepareLog() (*os.File, error) {
-	if err := state.EnsureRuntimeDir(); err != nil {
+	if err := state.Default().EnsureDir(); err != nil {
 		return nil, err
 	}
 	return os.OpenFile(config.LogPath(),
@@ -216,7 +267,7 @@ func watchKeys() <-chan string {
 
 // drive is the event loop: it feeds management lines, the captured assertion, and
 // an overall deadline into the pure reducer and performs the effects it emits.
-func drive(o Options, client *mgmt.Client, pid int, sock string, cb *callback.Server) (state.Run, error) {
+func drive(o Options, store *state.Store, client *mgmt.Client, pid int, sock string, cb *callback.Server) (state.Run, error) {
 	st := reducer.Initial(config.CallbackPort)
 	lines := client.Lines()
 	var samlCh <-chan callback.Result
@@ -302,7 +353,7 @@ func drive(o Options, client *mgmt.Client, pid int, sock string, cb *callback.Se
 					break
 				}
 				dnsBackup = b
-				if err := state.SaveDNSBackup(b); err != nil {
+				if err := store.SaveDNS(b); err != nil {
 					o.Logger.Info("warning: could not persist DNS backup: %v", err)
 					o.UI.Warn("could not record the DNS backup: %v — `disconnect` may not restore your resolver", err)
 				}
@@ -327,7 +378,7 @@ func drive(o Options, client *mgmt.Client, pid int, sock string, cb *callback.Se
 			case reducer.Failed:
 				if dnsBackup.ServiceID != "" {
 					_ = o.Sys.RevertDNS(dnsBackup)
-					_ = state.ClearDNSBackup()
+					_ = store.ClearDNS()
 				}
 				return state.Run{}, fmt.Errorf("connection failed: %s", eff.Reason)
 			}

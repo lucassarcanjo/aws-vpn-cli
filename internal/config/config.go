@@ -49,13 +49,9 @@ func FirstAuthPassword() string {
 }
 
 // ---- root-owned runtime state (/var/run/awsvpn) ----
-
-// RunStatePath is where the active connection is recorded (JSON).
-func RunStatePath() string { return filepath.Join(RuntimeDir, "run.json") }
-
-// DNSBackupPath is the resolver state to revert to; written the moment DNS is
-// applied so a crash mid-connect is still revertible on the next run.
-func DNSBackupPath() string { return filepath.Join(RuntimeDir, "dns-backup.json") }
+//
+// The two JSON records under RuntimeDir (the active connection and its DNS
+// revert state) are named by internal/state, which owns their layout.
 
 // LogPath is the current connection's log file.
 func LogPath() string { return filepath.Join(RuntimeDir, "awsvpn.log") }

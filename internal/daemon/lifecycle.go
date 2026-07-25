@@ -10,22 +10,22 @@ import (
 // Disconnect tears down the active tunnel: signals acvc-openvpn to exit, reverts
 // DNS, and clears the recorded state. Safe when nothing is connected (reverts any
 // lingering DNS override) and when the tunnel already died.
-func Disconnect(sys system.Port, log *logging.Logger) (string, error) {
-	r, ok, err := state.Load()
+func Disconnect(sys system.Port, st *state.Store, log *logging.Logger) (string, error) {
+	r, ok, err := st.Run()
 	if err != nil {
 		return "", err
 	}
 	if !ok {
-		revertDNS(sys, log) // no tunnel on record, but a crash may have left an override
+		revertDNS(sys, st, log) // no tunnel on record, but a crash may have left an override
 		return "", nil
 	}
-	return r.Profile, teardown(sys, r, log)
+	return r.Profile, teardown(sys, st, r, log)
 }
 
 // teardown stops a specific recorded tunnel and clears its state. It only ever
 // signals the recorded PID after confirming it is still an acvc-openvpn process,
 // so a recycled PID belonging to something else is never killed.
-func teardown(sys system.Port, r state.Run, log *logging.Logger) error {
+func teardown(sys system.Port, st *state.Store, r state.Run, log *logging.Logger) error {
 	// Prefer a clean management SIGTERM (openvpn removes its own routes).
 	if r.MgmtSocket != "" {
 		if err := mgmt.SignalTerm(r.MgmtSocket); err != nil {
@@ -34,8 +34,8 @@ func teardown(sys system.Port, r state.Run, log *logging.Logger) error {
 	} else {
 		killIfOpenVPN(sys, r)
 	}
-	revertDNS(sys, log)
-	return state.Clear()
+	revertDNS(sys, st, log)
+	return st.ClearRun()
 }
 
 func killIfOpenVPN(sys system.Port, r state.Run) {
@@ -48,10 +48,10 @@ func killIfOpenVPN(sys system.Port, r state.Run) {
 // process has died (or whose PID was recycled to something else) — so a crash
 // never leaves the resolver pointed at an unreachable server, and a recycled PID
 // is never mistaken for a live tunnel.
-func CleanupStale(sys system.Port, log *logging.Logger) {
-	r, ok, err := state.Load()
+func CleanupStale(sys system.Port, st *state.Store, log *logging.Logger) {
+	r, ok, err := st.Run()
 	if err != nil || !ok {
-		revertDNS(sys, log) // no record, but maybe a lingering override
+		revertDNS(sys, st, log) // no record, but maybe a lingering override
 		return
 	}
 	if r.Alive() && sys.IsOpenVPN(r.OvpnPID) {
@@ -60,26 +60,26 @@ func CleanupStale(sys system.Port, log *logging.Logger) {
 	if log != nil {
 		log.Info("cleaning up stale connection (%s: pid %d is not a live acvc-openvpn)", r.Profile, r.OvpnPID)
 	}
-	revertDNS(sys, log)
-	_ = state.Clear()
+	revertDNS(sys, st, log)
+	_ = st.ClearRun()
 }
 
 // revertDNS restores the resolver from the persisted backup, if any.
-func revertDNS(sys system.Port, log *logging.Logger) {
-	b, ok, err := state.LoadDNSBackup()
+func revertDNS(sys system.Port, st *state.Store, log *logging.Logger) {
+	b, ok, err := st.DNS()
 	if err != nil || !ok {
 		return
 	}
 	if err := sys.RevertDNS(b); err != nil && log != nil {
 		log.Info("warning: could not revert DNS: %v", err)
 	}
-	_ = state.ClearDNSBackup()
+	_ = st.ClearDNS()
 }
 
 // Status returns the active run and whether it is genuinely live (the recorded
 // PID is still an acvc-openvpn process).
-func Status(sys system.Port) (state.Run, bool, error) {
-	r, ok, err := state.Load()
+func Status(sys system.Port, st *state.Store) (state.Run, bool, error) {
+	r, ok, err := st.Run()
 	if err != nil || !ok {
 		return state.Run{}, false, err
 	}

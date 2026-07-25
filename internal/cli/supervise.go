@@ -63,7 +63,8 @@ func runSupervise(uid int, profileFlag string) error {
 	signal.Notify(sigs, syscall.SIGTERM, syscall.SIGINT)
 	go func() { <-sigs; os.Exit(0) }()
 
-	run, ok, err := state.Load()
+	st := state.Default()
+	run, ok, err := st.Run()
 	if err != nil {
 		return err
 	}
@@ -76,14 +77,14 @@ func runSupervise(uid int, profileFlag string) error {
 		profile = profileFlag
 	}
 	if !(run.Alive() && sys.IsOpenVPN(run.OvpnPID)) {
-		return giveUp(sys, log, uid, profile, "the tunnel process is no longer running")
+		return giveUp(sys, st, log, uid, profile, "the tunnel process is no longer running")
 	}
 
 	// watchForDrop owns the management connection and closes it before returning,
 	// so the teardown below (which dials a fresh management client to send
 	// SIGTERM) isn't refused — openvpn's management accepts one client at a time.
 	reason := watchForDrop(run, log)
-	return giveUp(sys, log, uid, profile, reason)
+	return giveUp(sys, st, log, uid, profile, reason)
 }
 
 // watchForDrop attaches to the live tunnel's management channel and blocks until
@@ -141,9 +142,9 @@ func watchForDrop(run state.Run, log *logging.Logger) string {
 // giveUp runs the fail-safe teardown (revert DNS, remove routes, clear state) via
 // the same path `disconnect` uses, then posts a desktop notification so the user
 // knows the VPN is down and how to bring it back.
-func giveUp(sys system.Port, log *logging.Logger, uid int, profile, reason string) error {
+func giveUp(sys system.Port, st *state.Store, log *logging.Logger, uid int, profile, reason string) error {
 	log.Info("disconnecting %s: %s", profile, reason)
-	_, err := daemon.Disconnect(sys, log)
+	_, err := daemon.Disconnect(sys, st, log)
 	msg := fmt.Sprintf("%s — %s. Reconnect with: sudo awsvpn connect %s", profile, reason, profile)
 	if nerr := notify.Send(uid, "AWS VPN disconnected", msg); nerr != nil {
 		log.Info("could not post desktop notification (no GUI session?): %v", nerr)
