@@ -17,6 +17,18 @@ import (
 func plainEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("NO_COLOR", "1")
+	// Pin the grant too: whether the developer running the tests happens to have
+	// install-privilege on their machine must not decide what the hints say.
+	withGrant(t, false)
+}
+
+// withGrant pins whether the install-privilege rule is considered present, so a
+// test can assert on the wording either side of the opt-in.
+func withGrant(t *testing.T, installed bool) {
+	t.Helper()
+	prev := grantInstalled
+	grantInstalled = func() bool { return installed }
+	t.Cleanup(func() { grantInstalled = prev })
 }
 
 func liveRun() state.Run {
@@ -74,6 +86,32 @@ func TestPrintStatusDisconnected(t *testing.T) {
 	printStatus(&buf, state.Run{}, false)
 	if !strings.Contains(buf.String(), "disconnected") {
 		t.Errorf("expected a disconnected state:\n%s", buf.String())
+	}
+}
+
+// Once the grant is installed the binary elevates itself, so every suggested
+// command has to drop the `sudo` the user opted out of typing.
+func TestSuggestionsDropSudoOnceTheGrantIsInstalled(t *testing.T) {
+	plainEnv(t)
+	withGrant(t, true)
+
+	render := map[string]func(w *bytes.Buffer){
+		"status disconnected": func(w *bytes.Buffer) { printStatus(w, state.Run{}, false) },
+		"status stale":        func(w *bytes.Buffer) { printStatus(w, liveRun(), false) },
+		"connect summary":     func(w *bytes.Buffer) { printConnected(w, liveRun(), true) },
+		"list idle":           func(w *bytes.Buffer) { printProfiles(w, []profile.Profile{{Name: "dev"}}, "") },
+		"list connected":      func(w *bytes.Buffer) { printProfiles(w, []profile.Profile{{Name: "dev"}}, "dev") },
+	}
+	for name, print := range render {
+		var buf bytes.Buffer
+		print(&buf)
+		if strings.Contains(buf.String(), "sudo awsvpn connect") ||
+			strings.Contains(buf.String(), "sudo awsvpn disconnect") {
+			t.Errorf("%s still tells a granted user to type sudo:\n%s", name, buf.String())
+		}
+		if !strings.Contains(buf.String(), "awsvpn ") {
+			t.Errorf("%s dropped the suggestion entirely:\n%s", name, buf.String())
+		}
 	}
 }
 

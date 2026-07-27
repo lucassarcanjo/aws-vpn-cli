@@ -28,9 +28,9 @@ func newConnectCmd() *cobra.Command {
 		Long: "Connect to a profile by name, or with no argument pick one interactively.\n" +
 			"Returns control to your shell once the tunnel is up; the tunnel runs in the\n" +
 			"background until `awsvpn disconnect`.",
-		Example: "  sudo awsvpn connect dev\n" +
-			"  sudo awsvpn connect          # pick a profile\n" +
-			"  sudo awsvpn connect dev -v   # stream the raw connection log",
+		Example: fmt.Sprintf("  %[1]sawsvpn connect dev\n"+
+			"  %[1]sawsvpn connect          # pick a profile\n"+
+			"  %[1]sawsvpn connect dev -v   # stream the raw connection log", sudoPrefix()),
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := ensureRoot("connect", "to manage the tunnel"); err != nil {

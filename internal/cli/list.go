@@ -87,10 +87,10 @@ func printProfiles(w io.Writer, profiles []profile.Profile, active string) {
 	}
 	fmt.Fprintln(w)
 	if active != "" {
-		ui.Hint(w, "%s connected · disconnect with: sudo awsvpn disconnect", ui.Bullet)
+		ui.Hint(w, "%s connected · disconnect with: %sawsvpn disconnect", ui.Bullet, sudoPrefix())
 		return
 	}
-	ui.Hint(w, "Connect with: sudo awsvpn connect <name>")
+	ui.Hint(w, "Connect with: %sawsvpn connect <name>", sudoPrefix())
 }
 
 // profileJSON is the machine-readable face of `list`.

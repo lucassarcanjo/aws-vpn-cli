@@ -72,7 +72,7 @@ func newImportCmd() *cobra.Command {
 			}
 			s := ui.For(os.Stdout)
 			ui.Done(os.Stdout, "Imported %s %s", s.Bold(p.Name), s.Dim("("+dash(p.Region)+")"))
-			ui.Hint(os.Stdout, "Connect with: sudo awsvpn connect %s", p.Name)
+			ui.Hint(os.Stdout, "Connect with: %sawsvpn connect %s", sudoPrefix(), p.Name)
 			return nil
 		},
 	}

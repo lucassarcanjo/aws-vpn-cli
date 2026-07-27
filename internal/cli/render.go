@@ -59,7 +59,7 @@ func printConnected(w io.Writer, r state.Run, supervised bool) {
 	s.Fields(w,
 		ui.Field{Label: "status", Value: s.Dim("awsvpn status")},
 		ui.Field{Label: "logs", Value: s.Dim("awsvpn logs -f")},
-		ui.Field{Label: "stop", Value: s.Dim("sudo awsvpn disconnect")},
+		ui.Field{Label: "stop", Value: s.Dim(sudoPrefix() + "awsvpn disconnect")},
 	)
 }
 
@@ -70,7 +70,7 @@ func printStatus(w io.Writer, r state.Run, live bool) {
 	switch {
 	case r.Profile == "":
 		fmt.Fprintf(w, "%s %s\n", s.Dim(ui.Ring), s.Dim("disconnected"))
-		ui.Hint(w, "Connect with: sudo awsvpn connect")
+		ui.Hint(w, "Connect with: %sawsvpn connect", sudoPrefix())
 	case live:
 		fmt.Fprintf(w, "%s %s  %s\n\n", s.Green(ui.Bullet), s.Green("connected"), s.Bold(r.Profile))
 		s.Fields(w, runFields(r, true)...)
@@ -79,7 +79,7 @@ func printStatus(w io.Writer, r state.Run, live bool) {
 		ui.Hint(w, "A handshake is in progress, or was interrupted.")
 	default:
 		fmt.Fprintf(w, "%s %s  %s\n", s.Yellow(ui.WarnMark), s.Yellow("stale"), s.Bold(r.Profile))
-		ui.Hint(w, "Recorded, but its process is gone. Clean up with: sudo awsvpn disconnect")
+		ui.Hint(w, "Recorded, but its process is gone. Clean up with: %sawsvpn disconnect", sudoPrefix())
 	}
 }
 

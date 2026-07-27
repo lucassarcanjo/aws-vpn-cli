@@ -25,7 +25,7 @@ func newLogsCmd() *cobra.Command {
 			f, err := os.Open(config.LogPath())
 			if err != nil {
 				if os.IsNotExist(err) {
-					return fmt.Errorf("no log yet — connect first with `sudo awsvpn connect`")
+					return fmt.Errorf("no log yet — connect first with `%sawsvpn connect`", sudoPrefix())
 				}
 				return err
 			}

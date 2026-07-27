@@ -145,7 +145,7 @@ func watchForDrop(run state.Run, log *logging.Logger) string {
 func giveUp(sys system.Port, st *state.Store, log *logging.Logger, uid int, profile, reason string) error {
 	log.Info("disconnecting %s: %s", profile, reason)
 	_, err := daemon.Disconnect(sys, st, log)
-	msg := fmt.Sprintf("%s — %s. Reconnect with: sudo awsvpn connect %s", profile, reason, profile)
+	msg := fmt.Sprintf("%s — %s. Reconnect with: %sawsvpn connect %s", profile, reason, sudoPrefix(), profile)
 	if nerr := notify.Send(uid, "AWS VPN disconnected", msg); nerr != nil {
 		log.Info("could not post desktop notification (no GUI session?): %v", nerr)
 	}
