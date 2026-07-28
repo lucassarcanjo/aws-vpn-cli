@@ -76,6 +76,12 @@ awsvpn uninstall-privilege      # revoke that rule
 merges them with imported profiles. It supports one active connection; a new
 connection replaces the current tunnel.
 
+`connect` with no profile name opens a picker: type to filter the list the
+forgiving way `fzf` does — `pd` finds `prod` — then `↑`/`↓` to move, `Enter` to
+connect, `Esc` to cancel. Backspace widens the search and `ctrl-u` clears it.
+With [`fzf`](https://github.com/junegunn/fzf) installed you get its picker
+instead, and a list too tall for the window falls back to a typed prompt.
+
 While `connect` waits for single sign-on, press `Enter` to re-open the page or
 `c` then `Enter` to copy the link — useful when `open` hands it to a browser you
 aren't signed in with. `connect -v` streams the raw connection log instead of

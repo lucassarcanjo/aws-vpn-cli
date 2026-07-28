@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -195,9 +196,28 @@ func pickWithFzf(profiles []profile.Profile) (profile.Profile, bool, error) {
 	return profile.Profile{}, false, fmt.Errorf("selection %q not found", name)
 }
 
-// pickWithPrompt is the no-fzf fallback: a numbered list that also accepts the
-// profile name, because typing "dev" is the first thing anyone tries.
+// pickWithPrompt is the no-fzf fallback: an arrow-key list on a terminal, and a
+// typed prompt when there isn't one to drive (a pipe, a script, CI).
 func pickWithPrompt(profiles []profile.Profile) (profile.Profile, error) {
+	width := nameWidth(profiles)
+	choices := make([]ui.Choice, len(profiles))
+	for i, p := range profiles {
+		choices[i] = ui.Choice{Label: pad(p.Name, width), Note: dash(p.Region)}
+	}
+	i, err := ui.Select(os.Stdin, os.Stderr, "Which profile?", choices)
+	switch {
+	case err == nil:
+		return profiles[i], nil
+	case errors.Is(err, ui.ErrNoTerminal):
+		return pickByTyping(profiles)
+	default:
+		return profile.Profile{}, err
+	}
+}
+
+// pickByTyping is the non-interactive form: a numbered list that accepts a number
+// or the profile name, because typing "dev" is the first thing anyone tries.
+func pickByTyping(profiles []profile.Profile) (profile.Profile, error) {
 	s := ui.For(os.Stderr)
 	width := nameWidth(profiles)
 	fmt.Fprintf(os.Stderr, "\n  %s\n\n", s.Bold("Which profile?"))
