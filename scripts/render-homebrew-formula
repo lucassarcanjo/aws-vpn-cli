@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+if [[ $# -ne 2 ]]; then
+  echo "usage: $0 <tag> <output-formula>" >&2
+  exit 2
+fi
+
+tag="$1"
+output_formula="$2"
+if [[ ! "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+  echo "tag must be a stable semantic version such as v0.2.0: $tag" >&2
+  exit 2
+fi
+
+repository="${GITHUB_REPOSITORY:-lucassarcanjo/aws-vpn-cli}"
+tarball="https://github.com/${repository}/archive/refs/tags/${tag}.tar.gz"
+archive="$(mktemp)"
+trap 'rm -f "$archive"' EXIT
+
+curl -fsSL --retry 3 "$tarball" -o "$archive"
+if command -v sha256sum >/dev/null 2>&1; then
+  sha="$(sha256sum "$archive" | cut -d' ' -f1)"
+else
+  sha="$(shasum -a 256 "$archive" | cut -d' ' -f1)"
+fi
+
+mkdir -p "$(dirname "$output_formula")"
+sed -E \
+  -e "s#refs/tags/[^\"]+\.tar\.gz#refs/tags/${tag}.tar.gz#" \
+  -e "s#^  sha256 \"[0-9a-f]{64}\"#  sha256 \"${sha}\"#" \
+  Formula/awsvpn.rb > "$output_formula"
+
+# Refuse to publish a formula that was not fully rewritten.
+grep -Fq "refs/tags/${tag}.tar.gz" "$output_formula"
+grep -Fq "sha256 \"${sha}\"" "$output_formula"
+printf '%s -> %s\n' "$tag" "$sha"
