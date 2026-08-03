@@ -13,11 +13,10 @@ jobs:
   release:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.25"
-          check-latest: true
+          go-version: "1.26.5"
       - name: Verify vendored tree is consistent
         run: |
           go mod verify
@@ -29,10 +28,26 @@ jobs:
         run: go test -race ./...
       - name: Build
         run: make build
+      - name: Validate Homebrew formula
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: |
+          set -euo pipefail
+          brew tap lucassarcanjo/tap
+          tap_dir="$(brew --repository lucassarcanjo/tap)"
+          scripts/render-homebrew-formula "$GITHUB_REF_NAME" "$tap_dir/Formula/awsvpn.rb"
+          brew audit --formula lucassarcanjo/tap/awsvpn
+          brew install --build-from-source lucassarcanjo/tap/awsvpn
+          brew test lucassarcanjo/tap/awsvpn
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists; nothing to create."
+          else
+            gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes
+          fi
 
   # Publish the formula to the tap that serves
   # `brew install lucassarcanjo/tap/awsvpn`. Formula/awsvpn.rb here is the
@@ -44,10 +59,10 @@ jobs:
     env:
       TAP_REPO: lucassarcanjo/homebrew-tap
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Checkout tap
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ env.TAP_REPO }}
           ssh-key: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
@@ -57,28 +72,13 @@ jobs:
       # but if a digest ever shifts under an existing tag, `brew install` fails
       # closed on the mismatch rather than installing something unexpected.
       - name: Pin formula to the tagged tarball
-        run: |
-          set -euo pipefail
-          tag="$GITHUB_REF_NAME"
-          tarball="https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${tag}.tar.gz"
-          sha="$(curl -fsSL --retry 3 "$tarball" | sha256sum | cut -d' ' -f1)"
-          echo "$tag -> $sha"
-
-          install -d tap/Formula
-          sed -E \
-            -e "s#refs/tags/[^\"]+\.tar\.gz#refs/tags/${tag}.tar.gz#" \
-            -e "s#^  sha256 \"[0-9a-f]{64}\"#  sha256 \"${sha}\"#" \
-            Formula/awsvpn.rb > tap/Formula/awsvpn.rb
-
-          # Fail loudly rather than push a formula still holding the placeholder.
-          grep -q "refs/tags/${tag}.tar.gz" tap/Formula/awsvpn.rb
-          grep -q "sha256 \"${sha}\"" tap/Formula/awsvpn.rb
+        run: scripts/render-homebrew-formula "$GITHUB_REF_NAME" tap/Formula/awsvpn.rb
 
       - name: Push to tap
         working-directory: tap
         run: |
           set -euo pipefail
-          if git diff --quiet -- Formula/awsvpn.rb; then
+          if [[ -z "$(git status --porcelain -- Formula/awsvpn.rb)" ]]; then
             echo "Tap formula already matches $GITHUB_REF_NAME; nothing to push."
             exit 0
           fi
