@@ -1,11 +1,16 @@
-# Homebrew formula that BUILDS FROM SOURCE — no prebuilt binary is ever run as
-# root on trust. Drop this into a tap (e.g. lucassarcanjo/homebrew-tap) and
-# `brew install lucassarcanjo/tap/awsvpn`.
+# Homebrew formula that BUILDS FROM SOURCE. No prebuilt binary is ever run as
+# root on trust, and the vendored dependency tree means the build needs no
+# network inside Homebrew's sandbox.
+#
+# This file is the source of truth. On a v* tag, .github/workflows/release.yml
+# copies it into lucassarcanjo/homebrew-tap with `url` and `sha256` pinned to
+# that tag, which is what serves `brew install lucassarcanjo/tap/awsvpn`.
+# The placeholder sha256 below is rewritten there; it is never a real digest.
 class Awsvpn < Formula
   desc "CLI-first AWS Client VPN for macOS (SAML/SSO), trust-minimal wrapper"
   homepage "https://github.com/lucassarcanjo/aws-vpn-cli"
   url "https://github.com/lucassarcanjo/aws-vpn-cli/archive/refs/tags/v0.1.0.tar.gz"
-  # sha256 "<filled in at release>"
+  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
   license "MIT"
   head "https://github.com/lucassarcanjo/aws-vpn-cli.git", branch: "main"
 

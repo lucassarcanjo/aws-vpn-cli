@@ -41,20 +41,29 @@ about.
 
 ## Install
 
-Build it from source:
+With Homebrew:
+
+```sh
+brew install lucassarcanjo/tap/awsvpn
+```
+
+Or with the Go toolchain:
 
 ```sh
 go install github.com/lucassarcanjo/aws-vpn-cli@latest
 ```
 
-Or install from a clone:
+Or from a clone:
 
 ```sh
 git clone https://github.com/lucassarcanjo/aws-vpn-cli && cd aws-vpn-cli
 make install
 ```
 
-`Formula/awsvpn.rb` provides a Homebrew formula that also builds from source.
+Every route builds from source. The Homebrew formula lives in
+[`Formula/awsvpn.rb`](Formula/awsvpn.rb) and is published to
+[lucassarcanjo/homebrew-tap](https://github.com/lucassarcanjo/homebrew-tap) on
+each tagged release; `brew` compiles it locally rather than fetching a binary.
 
 ## Usage
 
