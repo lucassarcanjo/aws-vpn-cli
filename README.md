@@ -1,9 +1,3 @@
-<p align="center">
-  <img src="docs/banner.png"
-       alt="awsvpn — AWS Client VPN from your terminal. A terminal running sudo awsvpn connect dev reports a tunnel established through SAML/SSO to an AWS Client VPN endpoint."
-       width="900">
-</p>
-
 # awsvpn
 
 Connect to a SAML/SSO AWS Client VPN endpoint from your macOS terminal.
@@ -11,6 +5,12 @@ Connect to a SAML/SSO AWS Client VPN endpoint from your macOS terminal.
 ```sh
 sudo awsvpn connect dev
 ```
+
+<p align="center">
+  <img src="docs/demo.gif"
+       alt="A terminal running awsvpn connect dev. It stops the previous tunnel, verifies the AWS-signed VPN engine against Apple team 94KV3E626L, starts it, opens a SAML sign-in in the browser, captures the assertion, and reports a connected split-tunnel with its assigned IP and endpoint."
+       width="900">
+</p>
 
 `awsvpn` starts the AWS-signed VPN engine installed by the official AWS VPN
 Client, then returns control to your shell. Use it from a terminal, script, or
